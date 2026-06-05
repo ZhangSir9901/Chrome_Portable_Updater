@@ -1,52 +1,50 @@
-# Chrome Portable Launcher & Updater
+# Chrome Portable Launcher & Updater (智能更新器)
 
 [![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/Version-V53.2026-green.svg)](https://github.com/ZhangSir9901)
+[![Version](https://img.shields.io/badge/Version-v26.06.05-green.svg)](https://github.com/ZhangSir9901/Chrome_Portable_Updater)
 [![Source](https://img.shields.io/badge/Source-Iplaysoft-orange.svg)](https://www.iplaysoft.com/tools/chrome/)
 
-一个基于 Batch 和 PowerShell 开发的 **Google Chrome 便携版增强启动与自动升级工具**。专为追求“干净、便携、自动化”的用户设计。
+一个基于纯净 CMD 与现代 PowerShell 架构开发的 **Google Chrome 便携版增强启动与自动升级工具**。专为追求“干净、便携、安全、无残留、自动化”的用户设计。
+
+---
 
 ## 🌟 核心特性
 
-- **真正便携化**：强制将所有用户数据（书签、插件、历史记录）存储在程序同级目录的 `UserData` 文件夹中，不污染系统路径。
-- **自动静默升级**：自动同步异次元（Iplaysoft）提供的官方离线安装包，支持正式版、测试版、开发版等多通道自动识别。
-- **智能解压部署**：内置 7-Zip 递归解压逻辑，能从 Google 官方复杂的安装包（exe/7z）中自动提取核心程序文件。
-- **极简交互设计**：
-    - 发现新版本并升级后，自动弹出确认框并倒计时退出。
-    - 若无更新，提供 7 秒倒计时选择，支持一键启动浏览器或直接退出。
-- **快捷方式维护**：每次启动自动在桌面生成带有专用参数的快捷方式，确保启动逻辑始终正确。
+- **真正便携化 (Portable)**：强制将所有用户数据（书签、插件、历史记录、缓存）重定向并存储在程序同级目录的 `UserData` 文件夹中，不污染系统 C 盘。
+- **抗灾避错外壳 (Anti-Mangle Wrapper)**：启动器 `.bat` 采用 100% 纯英文（ASCII）环境构建，彻底杜绝了 Windows 中文环境下，由于 `UTF-8` 与 `GBK` 编码冲突导致的文件吞噬、乱码和闪退。
+- **智能解压部署 (Smart Unzip)**：内置 7-Zip 递归解压逻辑，能从 Google 官方复杂的安装包（exe/7z）中自动提取核心程序文件。
+- **全自动提权机制**：双击运行自动申请管理员特权（UAC），并在安全提权后完美继承原执行路径。
+- **故障诊断日志 (Debug System)**：自带一键日志覆写系统。每次运行会自动强制清空、覆写历史日志，若遇到网络或部署问题，会在同级目录下生成详尽的 `Chrome_Update_Debug.log` 堆栈日志。
+
+---
 
 ## 🚀 快速开始
 
-1. **下载脚本**：下载本仓库中的 `Chrome_Portable_Updater.bat`。
-2. **放置目录**：将脚本放置在您希望存放 Chrome 的目录下（如 `D:\Tools\Chrome\ `）。
-3. **运行**：双击运行脚本。
-    - 如果目录下没有 Chrome，它会自动下载并安装。
-    - 如果已有 Chrome，它会自动检查更新并根据您的选择启动或升级。
+为了满足不同用户的需求，项目提供以下两种部署与使用方式：
+
+### 推荐方法 A：小白用户（一键双击 `.exe`）
+1. 前往本仓库右侧的 [Releases (发布页面)](https://github.com/ZhangSir9901/Chrome_Portable_Updater/releases) 下载打包好的 **`Chrome_Portable_Updater.exe`**。
+2. 将该 `.exe` 放置在你希望存放 Chrome 的目录下（例如 `D:\Program Files\Chrome\`）。
+3. 双击运行即可！
+
+### 推荐方法 B：进阶/开发者用户（源码运行）
+1. 下载本仓库中 `main` 分支下的两个核心源码文件：
+   - `Chrome_Portable_Updater.bat` （100% 纯 ASCII 避错启动脚本）
+   - `Chrome_Portable_Updater.ps1` （自愈型更新器主体）
+2. 将这两个文件放于同级目录下（例如 `D:\Tools\Chrome\`）。
+3. 双击运行 `Chrome_Portable_Updater.bat` 即可拉起升级和启动流程。
+
+---
 
 ## 📁 目录结构
 
-运行后，您的文件夹将呈现如下结构：
+升级并启动后，您的 Chrome 文件夹将呈现如下优雅而清爽的结构：
+
 ```text
 .
-├── Chrome/             # Chrome 核心程序文件
-├── UserData/           # 您的所有个人数据（核心资产，建议定期备份）
-├── bin/                # 存放 7zr.exe 等辅助工具
-├── Launcher.log        # 运行日志
-└── Chrome_Portable_Updater.bat  # 启动与升级程序
-```
-
-## 🛠️ 技术要求
-
-- **操作系统**：Windows 10 / 11 (x64)
-- **权限**：脚本运行需要管理员权限（用于解压和写文件）
-- **依赖**：系统需自带 PowerShell 5.1+（Win10自带）及 `curl.exe`
-
-## ⚖️ 免责声明
-
-1. 本脚本仅作为自动化工具使用，不包含任何 Google Chrome 的程序代码。
-2. 浏览器程序和离线安装包链接均来源于 Google 官方及异次元软件世界分享。
-3. 请确保在合规的环境下使用 Google Chrome 浏览器。
-
----
-**ZhangSir9901** 项目作品 | [访问 GitHub 主页](https://github.com/ZhangSir9901)
+├── bin/                          # 核心解压引擎（自动拉取 7zr.exe）
+├── Chrome/                       # Chrome 主程序目录（完全隔离的绿色运行体）
+├── UserData/                     # 个人用户数据（包含你的书签、插件，最核心资产，请定期备份！）
+├── Chrome_Portable_Updater.bat   # 100% 纯英文批处理启动器
+├── Chrome_Portable_Updater.ps1   # 强悍的自愈型 PowerShell 升级器
+└── Chrome_Update_Debug.log       # 强制覆写的最新调试与诊断日志
