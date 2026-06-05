@@ -61,21 +61,27 @@ function Show-Header {
     Write-Host ""
 }
 
-# 创建桌面快捷方式
+# 创建桌面快捷方式 (带存在性判断)
 function Create-Shortcut {
     if (!(Test-Path $ChromeExe)) { return }
-    try {
-        $LnkPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "Chrome Portable.lnk"
-        $WshShell = New-Object -ComObject WScript.Shell
-        $Shortcut = $WshShell.CreateShortcut($LnkPath)
-        $Shortcut.TargetPath = $ChromeExe
-        $Shortcut.Arguments = "--user-data-dir=`"$UserData`""
-        $Shortcut.WorkingDirectory = $BaseDir
-        $Shortcut.IconLocation = "$ChromeExe,0"
-        $Shortcut.Save()
-        Log "桌面快捷方式创建/更新成功。" "Green"
-    } catch {
-        Log "警告: 创建快捷方式失败，但不影响使用。原因: $($_.Exception.Message)" "Yellow"
+    $DesktopPath = [Environment]::GetFolderPath("Desktop")
+    $LnkPath = Join-Path $DesktopPath "Chrome浏览器便携版.lnk"
+    
+    # 判断桌面上是否有便携版的快捷方式，如果没有就创建一个，如果有则直接掠过
+    if (!(Test-Path $LnkPath)) {
+        try {
+            Log "正在创建桌面快捷方式 [Chrome浏览器便携版]..." "Yellow"
+            $WshShell = New-Object -ComObject WScript.Shell
+            $Shortcut = $WshShell.CreateShortcut($LnkPath)
+            $Shortcut.TargetPath = $ChromeExe
+            $Shortcut.Arguments = "--user-data-dir=`"$UserData`""
+            $Shortcut.WorkingDirectory = $BaseDir
+            $Shortcut.IconLocation = "$ChromeExe,0"
+            $Shortcut.Save()
+            Log "桌面快捷方式创建成功。" "Green"
+        } catch {
+            Log "警告: 创建快捷方式失败。原因: $($_.Exception.Message)" "Yellow"
+        }
     }
 }
 
@@ -265,14 +271,19 @@ try {
         Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # 6. 结束与交互
+    # =======================================================
+    # 5. 自动创建桌面快捷方式 (无论是否升级，进入分支提示前判定)
+    # =======================================================
+    Create-Shortcut
+
+    # 结束分支
     if ($Updated) {
-        Log "Chrome 升级成功！" "Green"
+        Log "升级任务已全部完成！" "Green"
         $Wsh = New-Object -ComObject WScript.Shell
         $Wsh.Popup("升级完成，最新版本为：$($Match.Version)", 7, "Chrome 便携版", 64) | Out-Null
         exit
     } else {
-        Log "当前已经是最新版，无需更新。" "Green"
+        Log "当前已经是最新版啦，无需更新。" "Green"
         Write-Host ""
         Write-Host " ---------------------------------------" -ForegroundColor Gray
         Write-Host " [O] 启动并打开浏览器 (Open)" -ForegroundColor White
