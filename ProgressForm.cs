@@ -192,12 +192,6 @@ namespace ChromeUpdater
                 progressBar1.Style = ProgressBarStyle.Blocks;
                 progressBar1.Value = 100;
 
-                if (isShortcut)
-                {
-                    lblStatus.Text = "正在创建桌面快捷方式...";
-                    CreateDesktopShortcut();
-                }
-
                 if (isDefaultBrowser)
                 {
                     lblStatus.Text = "正在关联默认浏览器参数...";

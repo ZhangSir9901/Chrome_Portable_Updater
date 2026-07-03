@@ -125,10 +125,12 @@ namespace ChromeUpdater
             {
                 try
                 {
-                    // 读取本地已存在的 chrome.exe 的版本号属性
                     FileVersionInfo info = FileVersionInfo.GetVersionInfo(chromeExe);
                     string localVer = info.FileVersion;
                     lblStatus.Text = $"本地已存在 Chrome，版本号: {localVer}";
+
+                    // 🌟 新增：检测到本地存在浏览器时，立即根据用户选项智能管理快捷方式
+                    ManageShortcuts();
                 }
                 catch
                 {
@@ -143,17 +145,16 @@ namespace ChromeUpdater
 
         private void btnLaunch_Click(object sender, EventArgs e)
         {
-            // 1. 检查本地 chrome.exe 是否存在
             if (File.Exists(chromeExe))
             {
                 lblStatus.Text = "正在启动 Google Chrome 浏览器...";
 
+                // 🌟 新增：启动时再次同步管理一次快捷方式
+                ManageShortcuts();
+
                 try
                 {
-                    // 2. 🌟 逻辑修改：启动时不带任何 arguments，直接以正常版模式运行
                     Process.Start(chromeExe);
-
-                    // 3. 启动成功后，更新器自动关闭退出
                     Application.Exit();
                 }
                 catch (Exception ex)
@@ -318,6 +319,40 @@ namespace ChromeUpdater
             if (vs.Major <= 5) return "XP";
             if (vs.Major == 6 && vs.Minor <= 3) return "7/8";
             return "10/11";
+        }
+        // 🌟 智能快捷方式管理器：选“是”则极速生成两个，选“否”则贴心自动清理桌面
+        private void ManageShortcuts()
+        {
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            string shortcutPortable = Path.Combine(desktop, "Google Chrome 便携版.lnk");
+            string shortcutNormal = Path.Combine(desktop, "Google Chrome 浏览器.lnk");
+
+            if (rdoShortcutYes.Checked)
+            {
+                // 1. 创建两个快捷方式
+                Type t = Type.GetTypeFromProgID("WScript.Shell");
+                dynamic shell = Activator.CreateInstance(t);
+
+                // 便携增强版
+                dynamic sPortable = shell.CreateShortcut(shortcutPortable);
+                sPortable.TargetPath = chromeExe;
+                sPortable.Arguments = $"--user-data-dir=\"{userDataDir}\" --no-first-run";
+                sPortable.WorkingDirectory = Path.GetDirectoryName(chromeExe);
+                sPortable.Save();
+
+                // 正常版
+                dynamic sNormal = shell.CreateShortcut(shortcutNormal);
+                sNormal.TargetPath = chromeExe;
+                sNormal.Arguments = ""; // 正常无参数
+                sNormal.WorkingDirectory = Path.GetDirectoryName(chromeExe);
+                sNormal.Save();
+            }
+            else
+            {
+                // 2. 🌟 细节闭环：如果用户在面板上选了“否”，自动把桌面上的那两个快捷方式清理删掉！
+                if (File.Exists(shortcutPortable)) File.Delete(shortcutPortable);
+                if (File.Exists(shortcutNormal)) File.Delete(shortcutNormal);
+            }
         }
     }
 }
