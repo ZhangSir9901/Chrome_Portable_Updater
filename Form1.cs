@@ -143,20 +143,17 @@ namespace ChromeUpdater
 
         private void btnLaunch_Click(object sender, EventArgs e)
         {
-            // 1. 检查本地 chrome.exe 是否真的存在
+            // 1. 检查本地 chrome.exe 是否存在
             if (File.Exists(chromeExe))
             {
-                lblStatus.Text = "正在启动 Google Chrome 便携增强版...";
-
-                // 2. 构造便携启动参数（强制将用户配置、缓存数据写在同级目录下的 UserData 文件夹里，实现彻底隔离）
-                string arguments = $"--user-data-dir=\"{userDataDir}\" --no-first-run";
+                lblStatus.Text = "正在启动 Google Chrome 浏览器...";
 
                 try
                 {
-                    // 3. 启动 Chrome 进程
-                    Process.Start(chromeExe, arguments);
+                    // 2. 🌟 逻辑修改：启动时不带任何 arguments，直接以正常版模式运行
+                    Process.Start(chromeExe);
 
-                    // 4. 启动成功后，更新器作为引导程序功成身退，自动关闭退出
+                    // 3. 启动成功后，更新器自动关闭退出
                     Application.Exit();
                 }
                 catch (Exception ex)
@@ -166,8 +163,7 @@ namespace ChromeUpdater
             }
             else
             {
-                // 5. 如果本地没有，友好地弹窗提示
-                MessageBox.Show("本地尚未检测到 Chrome 便携版，请先点击右侧的【检查并更新】按钮进行全自动下载和安装！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("本地尚未检测到 Chrome 便携版，请先点击右侧的【检查并更新】按钮！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 

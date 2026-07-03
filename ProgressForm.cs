@@ -376,17 +376,28 @@ namespace ChromeUpdater
             p.WaitForExit();
         }
 
+        // 🌟 升级版：一次性在桌面上创建“便携增强版”和“正常版”两个快捷方式
         private void CreateDesktopShortcut()
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            string shortcutPath = Path.Combine(desktop, "Google Chrome (便携增强版).lnk");
             Type t = Type.GetTypeFromProgID("WScript.Shell");
             dynamic shell = Activator.CreateInstance(t);
-            dynamic shortcut = shell.CreateShortcut(shortcutPath);
-            shortcut.TargetPath = chromeExe;
-            shortcut.Arguments = $"--user-data-dir=\"{userDataDir}\" --no-first-run";
-            shortcut.WorkingDirectory = Path.GetDirectoryName(chromeExe);
-            shortcut.Save();
+
+            // 1. 创建“便携增强版”快捷方式 (强行注入 UserData 便携参数)
+            string shortcutPathPortable = Path.Combine(desktop, "Google Chrome 便携版.lnk");
+            dynamic shortcutPortable = shell.CreateShortcut(shortcutPathPortable);
+            shortcutPortable.TargetPath = chromeExe;
+            shortcutPortable.Arguments = $"--user-data-dir=\"{userDataDir}\" --no-first-run";
+            shortcutPortable.WorkingDirectory = Path.GetDirectoryName(chromeExe);
+            shortcutPortable.Save();
+
+            // 2. 创建“正常版”快捷方式 (完全不加任何参数，走 Windows 系统默认路径)
+            string shortcutPathNormal = Path.Combine(desktop, "Google Chrome 浏览器.lnk");
+            dynamic shortcutNormal = shell.CreateShortcut(shortcutPathNormal);
+            shortcutNormal.TargetPath = chromeExe;
+            shortcutNormal.Arguments = ""; // 👈 留空代表正常无参数启动
+            shortcutNormal.WorkingDirectory = Path.GetDirectoryName(chromeExe);
+            shortcutNormal.Save();
         }
 
         // 🌟 核心点击事件：用时间差算法手动模拟出“双击”，完美解决 Windows 进度条吞双击的缺陷！
