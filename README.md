@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![WPF](https://img.shields.io/badge/UI-WPF%20%2B%20GPU%20Acceleration-success.svg)](#)
-[![OS](https://img.shields.io/badge/OS-WinXP%20%7C%20Win7%20%7C%20Win10%20%7C%20Win11-lightgrey.svg)](#)
+[![OS](https://img.shields.io/badge/OS-Win7%20%7C%20Win8%20%7C%20Win10%20%7C%20Win11-lightgrey.svg)](#)
 
 一款专为中国大陆网络环境深度定制的 **Chrome 便携版智能下载、升级与环境接管神器**。  
 基于 WPF 打造，采用纯异步非阻塞架构与 GPU 硬件加速引擎，彻底告别假死与卡顿。无论你是追求纯净环境的极客，还是需要大规模部署的运维，它都能为你提供极度丝滑的无感体验。
@@ -22,9 +22,9 @@
 *   **60帧极致动画**：进度条彩蛋不使用定时器重绘，直接调动 WPF 原生的 Storyboard 引擎与 GPU 3D 渲染，文字滚动自带发光特效，纵享 60 帧极度丝滑。
 
 ### ⚙️ 3. 系统层的“双规注册表”与“全系统接管”
-*   **跨越 XP 到 Win11 的默认浏览器接管**：
+*   **跨越 Win7 到 Win11 的默认浏览器接管**：
     *   *Win10/Win11*：静默写入专属 ProgID（"Google Chrome 便携版"）上系统户口，智能呼出系统设置面板并执行 30 秒无感异步轮询。
-    *   *WinXP/Win7*：自动降级为暴力注入模式，瞬间强改底层关联，无需用户干预。
+    *   *Win7/Win8*：自动降级为暴力注入模式，瞬间强改底层关联，无需用户干预。
 *   **归一化路径匹配**：底层 IO 与注册表查验严格实行绝对路径的小写正斜杠归一化，判定成功率 100%。
 
 ### ⚡ 4. 架构层的“异步非阻塞”与“单点维护”
