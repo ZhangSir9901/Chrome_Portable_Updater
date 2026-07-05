@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace ChromeUpdater.Properties
+namespace ChromeUpdaterWPF.Properties
 {
 
 
