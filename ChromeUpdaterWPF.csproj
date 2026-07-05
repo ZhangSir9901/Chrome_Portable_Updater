@@ -7,7 +7,7 @@
     <ProjectGuid>{E057D004-72D0-45FA-9EF8-9747050CD905}</ProjectGuid>
     <OutputType>WinExe</OutputType>
     <RootNamespace>ChromeUpdaterWPF</RootNamespace>
-    <AssemblyName>ChromeUpdaterWPF</AssemblyName>
+    <AssemblyName>ChromeUpdater</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
