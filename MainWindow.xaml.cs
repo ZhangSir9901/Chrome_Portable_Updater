@@ -34,7 +34,7 @@ namespace ChromeUpdaterWPF
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            try { this.Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/oeqix-8oy5t-001.ico")); } catch { }
+            try { this.Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/logo.ico")); } catch { }
 
             if (Environment.Is64BitOperatingSystem) rdo64.Content = "64位 (自动检测)";
             else { rdo32.IsChecked = true; rdo32.Content = "32位 (自动检测)"; }

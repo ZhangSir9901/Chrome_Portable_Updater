@@ -17,7 +17,7 @@
             <Grid Height="40" VerticalAlignment="Top" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <!-- 标题左侧显示程序的 ICO 图标 -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0,0,0">
-                    <Image Source="logo.ico" Height="28" Width="28" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                    <Image Source="/logo.ico" Height="28" Width="28" VerticalAlignment="Center" Margin="0,0,14,0"/>
                     <TextBlock Text="Chrome 便携版智能升级器" FontWeight="Bold" Foreground="#34495E" VerticalAlignment="Center"/>
                 </StackPanel>
 
