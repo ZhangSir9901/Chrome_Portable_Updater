@@ -4,7 +4,7 @@
         Title="Chrome 便携版智能升级器" Height="500" Width="750"
         WindowStartupLocation="CenterScreen" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         FontFamily="Microsoft YaHei" FontSize="14" Opacity="0.95"
-        Icon="oeqix-8oy5t-001.ico">
+        Icon="logo.ico">
 
     <!-- 极美圆角带阴影外框 -->
     <Border Background="#F2F4F6" CornerRadius="12" Margin="20">
@@ -17,7 +17,7 @@
             <Grid Height="40" VerticalAlignment="Top" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <!-- 标题左侧显示程序的 ICO 图标 -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0,0,0">
-                    <Image Source="oeqix-8oy5t-001.ico" Height="28" Width="28" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                    <Image Source="logo.ico" Height="28" Width="28" VerticalAlignment="Center" Margin="0,0,14,0"/>
                     <TextBlock Text="Chrome 便携版智能升级器" FontWeight="Bold" Foreground="#34495E" VerticalAlignment="Center"/>
                 </StackPanel>
 
