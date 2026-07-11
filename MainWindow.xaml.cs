@@ -8,7 +8,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
-using System.Text.Json.Nodes; // 处理 JSON 节点的核心命名空间
 using System.Collections.Generic;
 
 namespace ChromeUpdaterWPF
@@ -81,7 +80,7 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
-        // 🌟 新增：根据下拉菜单选择，动态计算出本地 C 盘 User Data 对应的具体物理路径
+        // 根据下拉菜单选择，动态计算出本地 C 盘 User Data 对应的具体物理路径
         private string GetLocalUserDataDir()
         {
             try
@@ -109,15 +108,26 @@ namespace ChromeUpdaterWPF
             }
             catch
             {
-                // 容错降级：默认返回稳定版路径
                 return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "User Data");
             }
         }
 
-        // ================== 🌟 极客级环境注入：浏览器黄金参数与 UI 偏好设置 (双向注入版) ==================
+        // ================== 🌟 极客级环境注入：纯原生正则免 DLL 注入引擎 (双向注入) ==================
         private void ApplyChromeTuningConfig()
         {
-            // 🌟 核心升级：同时将【便携版目录】和【系统 C 盘本地目录】加入优化队列！
+            // 🌟 守护逻辑：检测本地是否有正在运行的 chrome 进程。若不关闭，Chrome 退出时会覆盖我们的参数修改
+            try
+            {
+                var chromeProcesses = Process.GetProcessesByName("chrome");
+                if (chromeProcesses.Length > 0)
+                {
+                    MessageBox.Show(
+                        "【参数注入提示】\n\n检测到您的系统原生 Chrome 浏览器正在后台运行。\n\n由于运行中的 Chrome 会独占并锁定配置文件，为了成功彻底屏蔽本地的【问问 Gemini/AI 功能】，请您先保存好当前网页后，手动关闭全部 Chrome 窗口。\n\n关闭后，请点击本窗口的【确定】按钮，继续进行深度优化参数写入！",
+                        "请先关闭 Chrome", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch { }
+
             var targetUserDirs = new List<string> { userDataDir };
 
             try
@@ -130,85 +140,153 @@ namespace ChromeUpdaterWPF
             }
             catch { }
 
-            // 循环遍历，对所有有效的 UserData 目录依次注入优化参数
             foreach (var uDir in targetUserDirs)
             {
                 try
                 {
-                    // 确保该 UserData 目录和 Default 目录存在
                     string defaultDir = Path.Combine(uDir, "Default");
                     if (!Directory.Exists(defaultDir)) Directory.CreateDirectory(defaultDir);
 
                     // --------------------------------------------------------------------------------
-                    // 模块 1：修改【Local State】 -> 负责底层 Flag (禁用 AI 下载、提升下载速度等)
+                    // 模块 1：注入 [Local State] -> 禁用 AI、开启多线程下载、平滑滚动、GPU加速
                     // --------------------------------------------------------------------------------
                     string localStatePath = Path.Combine(uDir, "Local State");
-                    string localStateJson = File.Exists(localStatePath) ? File.ReadAllText(localStatePath) : "{}";
+                    string localStateContent = File.Exists(localStatePath) ? File.ReadAllText(localStatePath) : "{}";
 
-                    JsonNode localNode = JsonNode.Parse(localStateJson) ?? new JsonObject();
-                    if (localNode["browser"] == null) localNode["browser"] = new JsonObject();
-                    if (localNode["browser"]["enabled_labs_experiments"] == null) localNode["browser"]["enabled_labs_experiments"] = new JsonArray();
-
-                    JsonArray labsArray = localNode["browser"]["enabled_labs_experiments"].AsArray();
-
-                    // 🌟 核心调优列表 (格式说明：@1代表开启，@2代表关闭)
-                    var targetFlags = new List<string>
-                    {
-                        "optimization-guide-on-device-model@2", // [必关] 彻底禁止 Chrome 后台偷下 4GB 的 Gemini Nano AI 模型
-                        "prompt-api-for-gemini-nano@2",         // [必关] 额外封锁：禁用网页 Prompt API，防止网页唤醒 AI 重新下载
-                        "ai-mode-omnibox-entrypoint@2",         // [必关] 额外封锁：隐藏地址栏中烦人的 "Ask Gemini" 快捷按钮
-                        
-                        "enable-parallel-downloading@1",        // [必开] 开启多线程并发下载，让自带下载器速度媲美 IDM
-                        "hardware-media-key-handling@2",        // [必关] 禁用系统级媒体按键监听（解决按音量键出现巨大黑块的问题）
-                        "smooth-scrolling@1",                   // [必开] 强制开启网页平滑滚动，让鼠标滚轮如丝般顺滑
-                        "enable-gpu-rasterization@1"            // [必开] 强制开启 GPU 网页渲染加速，提升看图和看视频性能
-                    };
-
-                    // 智能合并遍历：移除旧的同名 flag，注入我们指定的 flag
-                    foreach (var flag in targetFlags)
-                    {
-                        string flagBase = flag.Split('@')[0];
-                        for (int i = labsArray.Count - 1; i >= 0; i--)
-                        {
-                            if (labsArray[i]?.ToString().StartsWith(flagBase) == true) labsArray.RemoveAt(i);
-                        }
-                        labsArray.Add(flag);
-                    }
-                    File.WriteAllText(localStatePath, localNode.ToJsonString());
+                    localStateContent = InjectLabsExperiments(localStateContent);
+                    File.WriteAllText(localStatePath, localStateContent);
 
                     // --------------------------------------------------------------------------------
-                    // 模块 2：修改【Preferences】 -> 负责 UI 设置 (对应你截图里的起始页、性能、省电)
+                    // 模块 2：注入 [Preferences] -> 启动页、省电、省内存
                     // --------------------------------------------------------------------------------
                     string prefPath = Path.Combine(defaultDir, "Preferences");
-                    string prefJson = File.Exists(prefPath) ? File.ReadAllText(prefPath) : "{}";
+                    string prefContent = File.Exists(prefPath) ? File.ReadAllText(prefPath) : "{}";
 
-                    JsonNode prefNode = JsonNode.Parse(prefJson) ?? new JsonObject();
-
-                    // 🚀 [截图二] 起始页面设置
-                    if (prefNode["session"] == null) prefNode["session"] = new JsonObject();
-                    // 1 = 继续浏览上次打开的网页 (如果想改为“打开新标签页”，把 1 改成 5 即可)
-                    prefNode["session"]["restore_on_startup"] = 1;
-
-                    // 🚀 [截图一] 性能与电源设置
-                    if (prefNode["performance_tuning"] == null) prefNode["performance_tuning"] = new JsonObject();
-
-                    // 1. 内存节省模式 (省内存)
-                    if (prefNode["performance_tuning"]["high_efficiency_mode"] == null) prefNode["performance_tuning"]["high_efficiency_mode"] = new JsonObject();
-                    prefNode["performance_tuning"]["high_efficiency_mode"]["state"] = 1; // 1 = 开启内存节省
-                    prefNode["performance_tuning"]["high_efficiency_mode"]["mode"] = 1;  // 1 = 均衡模式 (推荐)
-
-                    // 2. 节能模式 (省电)
-                    if (prefNode["performance_tuning"]["battery_saver_mode"] == null) prefNode["performance_tuning"]["battery_saver_mode"] = new JsonObject();
-                    prefNode["performance_tuning"]["battery_saver_mode"]["state"] = 1; // 1 = 仅在电池电量为 20% 或以下时开启 (2 = 只要不插电就开启)
-
-                    File.WriteAllText(prefPath, prefNode.ToJsonString());
+                    prefContent = InjectPreferences(prefContent);
+                    File.WriteAllText(prefPath, prefContent);
                 }
                 catch (Exception ex)
                 {
-                    // 这里的容错非常关键，保证单个目录异常不影响其他目录
                     Console.WriteLine($"对目录 {uDir} 进行环境注入时发生异常: {ex.Message}");
                 }
             }
+        }
+
+        // 🌟 正则注入 Local State Flag (禁用 AI 以及性能调优)
+        private string InjectLabsExperiments(string json)
+        {
+            var targetFlags = new List<string>
+            {
+                "optimization-guide-on-device-model@2", // [必关] 彻底禁止 Chrome 后台偷下 4GB 的 Gemini Nano AI 模型
+                "prompt-api-for-gemini-nano@2",         // [必关] 额外封锁：禁用网页 Prompt API，防止网页唤醒 AI 重新下载
+                "ai-mode-omnibox-entrypoint@2",         // [必关] 额外封锁：隐藏地址栏中自动弹出的 "Ask Gemini" 快捷入口
+                "glic@2",                               // [必关] 彻底屏蔽 146+ 新版标签栏/工具栏中新增的 "问问 Gemini" (glic) 浮动窗口
+                "summarization-api-for-gemini-nano@2",  // [必关] 禁用本地 Gemini Nano 总结 API 接口
+                "compose@2",                            // [必关] 禁用 Help me write 等 AI 辅助撰写功能
+                
+                "enable-parallel-downloading@1",        // [必开] 开启多线程并发下载，让自带下载器速度媲美 IDM
+                "hardware-media-key-handling@2",        // [必关] 禁用系统级媒体按键监听（解决按音量键出现巨大黑块的问题）
+                "smooth-scrolling@1",                   // [必开] 强制开启网页平滑滚动，让鼠标滚轮如丝般顺滑
+                "enable-gpu-rasterization@1"            // [必开] 强制开启 GPU 网页渲染加速，提升看图和看视频性能
+            };
+
+            if (string.IsNullOrWhiteSpace(json) || json.Trim() == "{}")
+            {
+                return "{\"browser\":{\"enabled_labs_experiments\":[" + string.Join(",", targetFlags.ConvertAll(f => $"\"{f}\"")) + "]}}";
+            }
+
+            // 确保 browser 节点存在
+            if (!json.Contains("\"browser\""))
+            {
+                int index = json.IndexOf('{');
+                if (index >= 0) json = json.Insert(index + 1, "\"browser\":{},");
+            }
+
+            // 确保 enabled_labs_experiments 存在于 browser 内部
+            string browserPattern = @"""browser""\s*:\s*\{";
+            Match browserMatch = Regex.Match(json, browserPattern);
+            if (browserMatch.Success)
+            {
+                int insertPos = browserMatch.Index + browserMatch.Length;
+                if (!json.Contains("\"enabled_labs_experiments\""))
+                {
+                    json = json.Insert(insertPos, "\"enabled_labs_experiments\":[],");
+                }
+            }
+
+            // 提取并更新 enabled_labs_experiments 数组
+            string arrayPattern = @"""enabled_labs_experiments""\s*:\s*\[([^\]]*)\]";
+            Match arrayMatch = Regex.Match(json, arrayPattern);
+            if (arrayMatch.Success)
+            {
+                string oldArrayContent = arrayMatch.Groups[1].Value;
+                var currentFlags = new List<string>();
+                var matches = Regex.Matches(oldArrayContent, @"""([^""]+)""");
+                foreach (Match m in matches)
+                {
+                    currentFlags.Add(m.Groups[1].Value);
+                }
+
+                foreach (var flag in targetFlags)
+                {
+                    string flagBase = flag.Split('@')[0] + "@";
+                    currentFlags.RemoveAll(f => f.StartsWith(flagBase));
+                    currentFlags.Add(flag);
+                }
+
+                string newArrayContent = string.Join(",", currentFlags.ConvertAll(f => $"\"{f}\""));
+                json = Regex.Replace(json, arrayPattern, $"\"enabled_labs_experiments\":[{newArrayContent}]");
+            }
+
+            return json;
+        }
+
+        // 🌟 正则注入 Preferences (设置起始页、省电、省内存)
+        private string InjectPreferences(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json) || json.Trim() == "{}")
+            {
+                return "{\"session\":{\"restore_on_startup\":1},\"performance_tuning\":{\"high_efficiency_mode\":{\"state\":1,\"mode\":1},\"battery_saver_mode\":{\"state\":1}}}";
+            }
+
+            json = InjectJsonKeyValue(json, "session", "restore_on_startup", "1");
+            json = InjectJsonKeyValue(json, "performance_tuning", "high_efficiency_mode", "{\"state\":1,\"mode\":1}");
+            json = InjectJsonKeyValue(json, "performance_tuning", "battery_saver_mode", "{\"state\":1}");
+
+            return json;
+        }
+
+        // 纯正则构建 JSON 层级注入辅助函数
+        private string InjectJsonKeyValue(string json, string parentKey, string childKey, string value)
+        {
+            if (!json.Contains($"\"{parentKey}\""))
+            {
+                int index = json.IndexOf('{');
+                if (index >= 0) json = json.Insert(index + 1, $"\"{parentKey}\":{{}},");
+            }
+
+            string parentPattern = @"""" + parentKey + @"""\s*:\s*\{";
+            Match parentMatch = Regex.Match(json, parentPattern);
+            if (parentMatch.Success)
+            {
+                int insertPos = parentMatch.Index + parentMatch.Length;
+                string childPattern = @"""" + childKey + @"""\s*:\s*([^,{}]+|\{[^{}]*\})";
+                Match childMatch = Regex.Match(json, childPattern);
+
+                if (childMatch.Success)
+                {
+                    string parentSubSection = json.Substring(parentMatch.Index);
+                    string updatedSub = Regex.Replace(parentSubSection, childPattern, $"\"{childKey}\":{value}", RegexOptions.None);
+                    json = json.Substring(0, parentMatch.Index) + updatedSub;
+                }
+                else
+                {
+                    json = json.Insert(insertPos, $"\"{childKey}\":{value},");
+                }
+            }
+
+            json = json.Replace(",,", ",").Replace(",}", "}").Replace("{,", "{");
+            return json;
         }
 
         // ================== 无边框窗口控制 ==================
@@ -268,7 +346,7 @@ namespace ChromeUpdaterWPF
                 rdo64.Foreground = defaultText; rdo64.FontWeight = FontWeights.Normal;
             }
 
-            // 更新下拉菜单项的颜色
+            // 更新下拉菜单项
             for (int i = 0; i < cmbChannel.Items.Count; i++)
             {
                 if (cmbChannel.Items[i] is ComboBoxItem item)
@@ -437,33 +515,40 @@ namespace ChromeUpdaterWPF
         // 🌟 快捷方式创建逻辑：两个快捷方式名字改为：“Chrome 便携版”和“Chrome 浏览器”
         private void ManageShortcuts()
         {
-            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            string shortcutPortable = Path.Combine(desktop, "Chrome 便携版.lnk");
-            string shortcutNormal = Path.Combine(desktop, "Chrome 浏览器.lnk");
-
-            if (rdoShortcutYes.IsChecked == true)
+            try
             {
-                Type t = Type.GetTypeFromProgID("WScript.Shell");
-                dynamic shell = Activator.CreateInstance(t);
+                string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                string shortcutPortable = Path.Combine(desktop, "Chrome 便携版.lnk");
+                string shortcutNormal = Path.Combine(desktop, "Chrome 浏览器.lnk");
 
-                // 🌟 第一个：便携版快捷方式（数据强制存储在 Chrome_Portable\UserData 目录下）
-                dynamic sPortable = shell.CreateShortcut(shortcutPortable);
-                sPortable.TargetPath = chromeExe;
-                sPortable.Arguments = $"--user-data-dir=\"{userDataDir}\" --no-first-run";
-                sPortable.WorkingDirectory = Path.GetDirectoryName(chromeExe);
-                sPortable.Save();
+                if (rdoShortcutYes.IsChecked == true)
+                {
+                    Type t = Type.GetTypeFromProgID("WScript.Shell");
+                    dynamic shell = Activator.CreateInstance(t);
 
-                // 🌟 第二个：原生浏览器快捷方式（不带便携参数，直接读取 C 盘本地 UserData 数据）
-                dynamic sNormal = shell.CreateShortcut(shortcutNormal);
-                sNormal.TargetPath = chromeExe;
-                sNormal.Arguments = ""; // 👈 按照你的要求：这里保持为空，以读取 C 盘本地配置
-                sNormal.WorkingDirectory = Path.GetDirectoryName(chromeExe);
-                sNormal.Save();
+                    // 🌟 第一个：便携版快捷方式（数据强制存储在 Chrome_Portable\UserData 目录下）
+                    dynamic sPortable = shell.CreateShortcut(shortcutPortable);
+                    sPortable.TargetPath = chromeExe;
+                    sPortable.Arguments = $"--user-data-dir=\"{userDataDir}\" --no-first-run";
+                    sPortable.WorkingDirectory = Path.GetDirectoryName(chromeExe);
+                    sPortable.Save();
+
+                    // 🌟 第二个：原生浏览器快捷方式（不带便携参数，直接读取 C 盘本地 UserData 数据）
+                    dynamic sNormal = shell.CreateShortcut(shortcutNormal);
+                    sNormal.TargetPath = chromeExe;
+                    sNormal.Arguments = ""; // 👈 按照你的要求：这里保持为空，以读取 C 盘本地配置
+                    sNormal.WorkingDirectory = Path.GetDirectoryName(chromeExe);
+                    sNormal.Save();
+                }
+                else
+                {
+                    if (File.Exists(shortcutPortable)) File.Delete(shortcutPortable);
+                    if (File.Exists(shortcutNormal)) File.Delete(shortcutNormal);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                if (File.Exists(shortcutPortable)) File.Delete(shortcutPortable);
-                if (File.Exists(shortcutNormal)) File.Delete(shortcutNormal);
+                Console.WriteLine($"更新或清理快捷方式失败: {ex.Message}");
             }
         }
 
@@ -562,17 +647,24 @@ namespace ChromeUpdaterWPF
         {
             if (File.Exists(chromeExe))
             {
-                // 1. 启动前，对【便携版目录】和【系统 C 盘本地目录】同步注入黄金优化参数
-                ApplyChromeTuningConfig();
+                try
+                {
+                    // 1. 启动前，对【便携版目录】和【系统 C 盘本地目录】同步注入黄金优化参数
+                    ApplyChromeTuningConfig();
 
-                // 2. 刷新桌面快捷方式状态
-                ManageShortcuts();
+                    // 2. 刷新桌面快捷方式状态
+                    ManageShortcuts();
 
-                // 3. 🌟 修复后的唯一正确启动逻辑：以纯正的便携数据参数拉起浏览器
-                Process.Start(chromeExe, $"--user-data-dir=\"{userDataDir}\"");
+                    // 3. 🌟 核心修复：添加 UseShellExecute=true 确保在升级器进程安全退出后，浏览器依然能不受干扰地运行
+                    Process.Start(new ProcessStartInfo(chromeExe, $"--user-data-dir=\"{userDataDir}\"") { UseShellExecute = true });
 
-                // 4. 安全退出升级器
-                Application.Current.Shutdown();
+                    // 4. 安全退出升级器
+                    Application.Current.Shutdown();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"启动浏览器时发生错误: {ex.Message}", "启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
             else MessageBox.Show("请先检查并更新！");
         }
