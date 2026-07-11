@@ -8,20 +8,22 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
+using System.Text.Json.Nodes; // 处理 JSON 节点的核心命名空间
+using System.Collections.Generic;
 
 namespace ChromeUpdaterWPF
 {
     public partial class MainWindow : Window
     {
-        private string portableDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Chrome_Portable");
-        private string chromeExe;
-        private string userDataDir;
+        private readonly string portableDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Chrome_Portable");
+        private readonly string chromeExe;
+        private readonly string userDataDir;
 
         // 🌟 核心：单点维护版本号，在此处修改，全程序（包括底部版权）自动同步更新！
-        private const string APP_VERSION = "8.17";
+        private const string APP_VERSION = "8.27";
 
         // 彩蛋诗词
-        private string poemText = "巴女浅醉黄鹤楼，\n江风吹皱美人绸。\n此别经年何时了，\n云锁巫山夜未犹。\n\n";
+        private readonly string poemText = "巴女浅醉黄鹤楼，\n江风吹皱美人绸。\n此别经年何时了，\n云锁巫山夜未犹。\n\n";
 
         public MainWindow()
         {
@@ -34,16 +36,176 @@ namespace ChromeUpdaterWPF
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            // 🌟 启动拦截：程序一加载，立马检测运行路径！
+            CheckRunningDirectory();
+
             try { this.Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/logo.ico")); } catch { }
 
             if (Environment.Is64BitOperatingSystem) rdo64.Content = "64位 (自动检测)";
             else { rdo32.IsChecked = true; rdo32.Content = "32位 (自动检测)"; }
 
             // 绑定动态版本信息
-            lblCopyright.Text = $"版本: {APP_VERSION}   技术支持: 微信: jiujiujiayi666   Telegram: @YuC2027";
+            lblCopyright.Text = $"版本: {APP_VERSION}";
 
             // 启动时检测
             await CheckAndDisplayVersionAsync();
+        }
+
+        private void CheckRunningDirectory()
+        {
+            try
+            {
+                // 1. 获取当前程序所在的真实完整路径，并去掉末尾的斜杠
+                string currentDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
+
+                // 2. 获取系统所在盘符 (绝大多数情况下是 C:\)
+                string systemDrive = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.System));
+
+                // 3. 获取当前用户的桌面和下载目录
+                string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                string downloadsPath = Path.Combine(userProfile, "Downloads");
+
+                // 4. 核心判定逻辑：只要在系统盘、桌面、下载目录，就触发警告
+                bool isSystemDrive = currentDir.StartsWith(systemDrive, StringComparison.OrdinalIgnoreCase);
+                bool isDesktop = currentDir.StartsWith(desktopPath, StringComparison.OrdinalIgnoreCase);
+                bool isDownloads = currentDir.StartsWith(downloadsPath, StringComparison.OrdinalIgnoreCase);
+
+                if (isSystemDrive || isDesktop || isDownloads)
+                {
+                    MessageBox.Show(
+                        "【便携版使用建议】\n\n检测到您当前在 系统盘/桌面/下载目录 运行本程序。\n\n作为一款纯正的便携版浏览器，为了防止未来重装系统导致您的书签、账号密码丢失，强烈建议您关闭本程序后，将整个文件夹【剪切】到 D盘、E盘 等非系统盘下再运行！",
+                        "智能路径提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch { }
+        }
+
+        // 🌟 新增：根据下拉菜单选择，动态计算出本地 C 盘 User Data 对应的具体物理路径
+        private string GetLocalUserDataDir()
+        {
+            try
+            {
+                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                int channelIndex = cmbChannel.SelectedIndex;
+                string folderName;
+
+                switch (channelIndex)
+                {
+                    case 1:
+                        folderName = "Chrome Beta"; // 测试版目录
+                        break;
+                    case 2:
+                        folderName = "Chrome Dev";  // 开发版目录
+                        break;
+                    case 3:
+                        folderName = "Chrome SxS";  // 金丝雀版目录 (SxS)
+                        break;
+                    default:
+                        folderName = "Chrome";      // 稳定版默认目录
+                        break;
+                }
+                return Path.Combine(localAppData, "Google", folderName, "User Data");
+            }
+            catch
+            {
+                // 容错降级：默认返回稳定版路径
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "User Data");
+            }
+        }
+
+        // ================== 🌟 极客级环境注入：浏览器黄金参数与 UI 偏好设置 (双向注入版) ==================
+        private void ApplyChromeTuningConfig()
+        {
+            // 🌟 核心升级：同时将【便携版目录】和【系统 C 盘本地目录】加入优化队列！
+            var targetUserDirs = new List<string> { userDataDir };
+
+            try
+            {
+                string localPath = GetLocalUserDataDir();
+                if (!string.IsNullOrEmpty(localPath))
+                {
+                    targetUserDirs.Add(localPath);
+                }
+            }
+            catch { }
+
+            // 循环遍历，对所有有效的 UserData 目录依次注入优化参数
+            foreach (var uDir in targetUserDirs)
+            {
+                try
+                {
+                    // 确保该 UserData 目录和 Default 目录存在
+                    string defaultDir = Path.Combine(uDir, "Default");
+                    if (!Directory.Exists(defaultDir)) Directory.CreateDirectory(defaultDir);
+
+                    // --------------------------------------------------------------------------------
+                    // 模块 1：修改【Local State】 -> 负责底层 Flag (禁用 AI 下载、提升下载速度等)
+                    // --------------------------------------------------------------------------------
+                    string localStatePath = Path.Combine(uDir, "Local State");
+                    string localStateJson = File.Exists(localStatePath) ? File.ReadAllText(localStatePath) : "{}";
+
+                    JsonNode localNode = JsonNode.Parse(localStateJson) ?? new JsonObject();
+                    if (localNode["browser"] == null) localNode["browser"] = new JsonObject();
+                    if (localNode["browser"]["enabled_labs_experiments"] == null) localNode["browser"]["enabled_labs_experiments"] = new JsonArray();
+
+                    JsonArray labsArray = localNode["browser"]["enabled_labs_experiments"].AsArray();
+
+                    // 🌟 核心调优列表 (格式说明：@1代表开启，@2代表关闭)
+                    var targetFlags = new List<string>
+                    {
+                        "optimization-guide-on-device-model@2", // [必关] 彻底禁止 Chrome 后台偷下 4GB 的 Gemini Nano AI 模型
+                        "enable-parallel-downloading@1",        // [必开] 开启多线程并发下载，让自带下载器速度媲美 IDM
+                        "hardware-media-key-handling@2",        // [必关] 禁用系统级媒体按键监听（解决按音量键出现巨大黑块的问题）
+                        "smooth-scrolling@1",                   // [必开] 强制开启网页平滑滚动，让鼠标滚轮如丝般顺滑
+                        "enable-gpu-rasterization@1"            // [必开] 强制开启 GPU 网页渲染加速，提升看图和看视频性能
+                    };
+
+                    // 智能合并遍历：移除旧的同名 flag，注入我们指定的 flag
+                    foreach (var flag in targetFlags)
+                    {
+                        string flagBase = flag.Split('@')[0];
+                        for (int i = labsArray.Count - 1; i >= 0; i--)
+                        {
+                            if (labsArray[i]?.ToString().StartsWith(flagBase) == true) labsArray.RemoveAt(i);
+                        }
+                        labsArray.Add(flag);
+                    }
+                    File.WriteAllText(localStatePath, localNode.ToJsonString());
+
+                    // --------------------------------------------------------------------------------
+                    // 模块 2：修改【Preferences】 -> 负责 UI 设置 (对应你截图里的起始页、性能、省电)
+                    // --------------------------------------------------------------------------------
+                    string prefPath = Path.Combine(defaultDir, "Preferences");
+                    string prefJson = File.Exists(prefPath) ? File.ReadAllText(prefPath) : "{}";
+
+                    JsonNode prefNode = JsonNode.Parse(prefJson) ?? new JsonObject();
+
+                    // 🚀 [截图二] 起始页面设置
+                    if (prefNode["session"] == null) prefNode["session"] = new JsonObject();
+                    // 1 = 继续浏览上次打开的网页 (如果想改为“打开新标签页”，把 1 改成 5 即可)
+                    prefNode["session"]["restore_on_startup"] = 1;
+
+                    // 🚀 [截图一] 性能与电源设置
+                    if (prefNode["performance_tuning"] == null) prefNode["performance_tuning"] = new JsonObject();
+
+                    // 1. 内存节省模式 (省内存)
+                    if (prefNode["performance_tuning"]["high_efficiency_mode"] == null) prefNode["performance_tuning"]["high_efficiency_mode"] = new JsonObject();
+                    prefNode["performance_tuning"]["high_efficiency_mode"]["state"] = 1; // 1 = 开启内存节省
+                    prefNode["performance_tuning"]["high_efficiency_mode"]["mode"] = 1;  // 1 = 均衡模式 (推荐)
+
+                    // 2. 节能模式 (省电)
+                    if (prefNode["performance_tuning"]["battery_saver_mode"] == null) prefNode["performance_tuning"]["battery_saver_mode"] = new JsonObject();
+                    prefNode["performance_tuning"]["battery_saver_mode"]["state"] = 1; // 1 = 仅在电池电量为 20% 或以下时开启 (2 = 只要不插电就开启)
+
+                    File.WriteAllText(prefPath, prefNode.ToJsonString());
+                }
+                catch (Exception ex)
+                {
+                    // 这里的容错非常关键，保证单个目录异常不影响其他目录
+                    Console.WriteLine($"对目录 {uDir} 进行环境注入时发生异常: {ex.Message}");
+                }
+            }
         }
 
         // ================== 无边框窗口控制 ==================
@@ -226,7 +388,7 @@ namespace ChromeUpdaterWPF
             return File.Exists(shortcutPortable) || File.Exists(shortcutNormal);
         }
 
-        // 🌟 修复：路径归一化匹配算法，100% 精准判定默认浏览器
+        // 🌟 路径归一化匹配算法，100% 精准判定默认浏览器
         // ================= 阶段三：归一化路径匹配（通杀双重注册表体系） =================
         private bool IsPortableChromeDefault()
         {
@@ -269,7 +431,7 @@ namespace ChromeUpdaterWPF
             return false;
         }
 
-        // 🌟 修复 1：两个快捷方式名字改为：“Chrome 便携版”和“Chrome 浏览器”
+        // 🌟 快捷方式创建逻辑：两个快捷方式名字改为：“Chrome 便携版”和“Chrome 浏览器”
         private void ManageShortcuts()
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -281,15 +443,17 @@ namespace ChromeUpdaterWPF
                 Type t = Type.GetTypeFromProgID("WScript.Shell");
                 dynamic shell = Activator.CreateInstance(t);
 
+                // 🌟 第一个：便携版快捷方式（数据强制存储在 Chrome_Portable\UserData 目录下）
                 dynamic sPortable = shell.CreateShortcut(shortcutPortable);
                 sPortable.TargetPath = chromeExe;
                 sPortable.Arguments = $"--user-data-dir=\"{userDataDir}\" --no-first-run";
                 sPortable.WorkingDirectory = Path.GetDirectoryName(chromeExe);
                 sPortable.Save();
 
+                // 🌟 第二个：原生浏览器快捷方式（不带便携参数，直接读取 C 盘本地 UserData 数据）
                 dynamic sNormal = shell.CreateShortcut(shortcutNormal);
                 sNormal.TargetPath = chromeExe;
-                sNormal.Arguments = "";
+                sNormal.Arguments = ""; // 👈 按照你的要求：这里保持为空，以读取 C 盘本地配置
                 sNormal.WorkingDirectory = Path.GetDirectoryName(chromeExe);
                 sNormal.Save();
             }
@@ -375,7 +539,7 @@ namespace ChromeUpdaterWPF
                     lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113));
                 }
 
-                // 无论如何，恢复控件状态并按照注册表真实结果渲染边框和选中态
+                // 无论如何，恢复控件状态并按照注册表真实结果渲染边框 and 选中态
                 rdoDefaultYes.Content = originalText;
                 borderDefault.IsEnabled = true;
                 UpdateBorderStyles(true, IsPortableChromeDefault(), ShortcutsExistOnDesktop());
@@ -395,8 +559,16 @@ namespace ChromeUpdaterWPF
         {
             if (File.Exists(chromeExe))
             {
+                // 1. 启动前，对【便携版目录】和【系统 C 盘本地目录】同步注入黄金优化参数
+                ApplyChromeTuningConfig();
+
+                // 2. 刷新桌面快捷方式状态
                 ManageShortcuts();
-                Process.Start(chromeExe);
+
+                // 3. 🌟 修复后的唯一正确启动逻辑：以纯正的便携数据参数拉起浏览器
+                Process.Start(chromeExe, $"--user-data-dir=\"{userDataDir}\"");
+
+                // 4. 安全退出升级器
                 Application.Current.Shutdown();
             }
             else MessageBox.Show("请先检查并更新！");
@@ -453,6 +625,9 @@ namespace ChromeUpdaterWPF
 
                 progressBar.IsIndeterminate = false;
                 progressBar.Value = 100;
+
+                // 🌟 新增：更新完新版本后，立刻对【双路径】注入配置！
+                ApplyChromeTuningConfig();
 
                 ManageShortcuts();
                 if (rdoDefaultYes.IsChecked == true) RunProcess(chromeExe, "--make-default-browser");
@@ -628,7 +803,9 @@ namespace ChromeUpdaterWPF
                     {
                         progIdKey.SetValue("", appName);
                         using (var icon = progIdKey.CreateSubKey("DefaultIcon")) icon.SetValue("", iconPath);
-                        using (var cmd = progIdKey.CreateSubKey(@"shell\open\command")) cmd.SetValue("", $"\"{exePath}\" --single-argument %1");
+                        // 🌟 修复：强力注入 --user-data-dir，确保从外部唤醒也是便携版
+                        using (var cmd = progIdKey.CreateSubKey(@"shell\open\command"))
+                            cmd.SetValue("", $"\"{exePath}\" --user-data-dir=\"{userDataDir}\" --single-argument %1");
 
                         // 🌟 新增：Win10/11 要求 ProgId 下必须有 Application 元数据，否则不认图标
                         using (var appKey = progIdKey.CreateSubKey("Application"))
@@ -646,7 +823,9 @@ namespace ChromeUpdaterWPF
                     {
                         clientKey.SetValue("", appName);
                         using (var icon = clientKey.CreateSubKey("DefaultIcon")) icon.SetValue("", iconPath);
-                        using (var cmd = clientKey.CreateSubKey(@"shell\open\command")) cmd.SetValue("", $"\"{exePath}\"");
+                        // 🌟 修复：同样强力注入 --user-data-dir
+                        using (var cmd = clientKey.CreateSubKey(@"shell\open\command"))
+                            cmd.SetValue("", $"\"{exePath}\" --user-data-dir=\"{userDataDir}\"");
 
                         using (var capKey = clientKey.CreateSubKey("Capabilities"))
                         {
@@ -696,12 +875,38 @@ namespace ChromeUpdaterWPF
                     {
                         using (var cmdKey = key.CreateSubKey($@"Software\Classes\{p}\shell\open\command"))
                         {
-                            cmdKey.SetValue("", $"\"{exePath}\" --single-argument %1");
+                            // 🌟 修复：XP 和 Win7 下的关联也必须指向便携版数据目录
+                            cmdKey.SetValue("", $"\"{exePath}\" --user-data-dir=\"{userDataDir}\" --single-argument %1");
                         }
                     }
                 }
             }
             catch { }
+        }
+        // 🌟 新增：微信小图标点击事件 (点击一键复制，极致用户体验)
+        private void WeChat_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Clipboard.SetText("jiujiujiayi666");
+                MessageBox.Show("微信号【jiujiujiayi666】已成功复制到剪贴板！\n您可以直接去微信中粘贴搜索、添加好友。", "技术支持", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"微信号复制失败: {ex.Message}\n请手动记录微信号: jiujiujiayi666", "技术支持");
+            }
+        }
+
+        // 🌟 新增：Telegram 小图标点击事件 (继承了你完美的“盲配安全跳转”逻辑)
+        private void Telegram_Click(object sender, RoutedEventArgs e)
+        {
+            bool chromeExists = Directory.Exists(portableDir) && File.Exists(chromeExe);
+            bool isDefault = IsPortableChromeDefault();
+
+            if (chromeExists && isDefault)
+            {
+                OpenUrl("https://t.me/YuC2027");
+            }
         }
     }
 }
