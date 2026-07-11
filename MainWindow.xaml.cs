@@ -155,6 +155,9 @@ namespace ChromeUpdaterWPF
                     var targetFlags = new List<string>
                     {
                         "optimization-guide-on-device-model@2", // [必关] 彻底禁止 Chrome 后台偷下 4GB 的 Gemini Nano AI 模型
+                        "prompt-api-for-gemini-nano@2",         // [必关] 额外封锁：禁用网页 Prompt API，防止网页唤醒 AI 重新下载
+                        "ai-mode-omnibox-entrypoint@2",         // [必关] 额外封锁：隐藏地址栏中烦人的 "Ask Gemini" 快捷按钮
+                        
                         "enable-parallel-downloading@1",        // [必开] 开启多线程并发下载，让自带下载器速度媲美 IDM
                         "hardware-media-key-handling@2",        // [必关] 禁用系统级媒体按键监听（解决按音量键出现巨大黑块的问题）
                         "smooth-scrolling@1",                   // [必开] 强制开启网页平滑滚动，让鼠标滚轮如丝般顺滑
