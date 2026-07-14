@@ -83,10 +83,13 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Button x:Name="btnLaunch" Grid.Column="0" Content="启动浏览器" Margin="0,0,10,0" Height="45" Background="#2ECC71" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnLaunch_Click"/>
+                    <Button x:Name="btnLaunch" Grid.Column="0" Content="启动浏览器" Margin="0,0,5,0" Height="45" Background="#2ECC71" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnLaunch_Click"/>
                     <Button x:Name="btnUpdate" Grid.Column="1" Content="检查并更新" Margin="5,0,5,0" Height="45" Background="#3498DB" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnUpdate_Click"/>
-                    <Button x:Name="btnExit"   Grid.Column="2" Content="退出程序" Margin="10,0,0,0" Height="45" Background="#E74C3C" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnClose_Click"/>
+                    <!-- 🌟 升级后完美的四列对称 AI 体检按钮 -->
+                    <Button x:Name="btnAICheck" Grid.Column="2" Content="AI 模型体检" Margin="5,0,5,0" Height="45" Background="#95A5A6" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnAICheck_Click"/>
+                    <Button x:Name="btnExit"   Grid.Column="3" Content="退出程序" Margin="5,0,0,0" Height="45" Background="#E74C3C" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnClose_Click"/>
                 </Grid>
 
                 <!-- 🌟 底部版权区：版本号与社交媒体小图标组合（像素级等大、对齐优化版） -->
@@ -128,6 +131,7 @@
             <!-- 半透明遮罩层 -->
             <Grid x:Name="OverlayPanel" Visibility="Collapsed" Background="#F5F7F9FC">
                 <Grid.RowDefinitions>
+                    <!-- 🌟 修复部分：去除错误的 Grid.RowDefinition 前缀，直接使用 RowDefinition -->
                     <RowDefinition Height="120"/>
                     <RowDefinition Height="60"/>
                     <RowDefinition Height="180"/>

@@ -18,8 +18,8 @@ namespace ChromeUpdaterWPF
         private readonly string chromeExe;
         private readonly string userDataDir;
 
-        // 🌟 核心：单点维护版本号，在此处修改，全程序（包括底部版权）自动同步更新！
-        private const string APP_VERSION = "8.27";
+        // 🌟 读取你在 AssemblyInfo.cs 代码里填写的任何漂亮文本
+        private static readonly string APP_VERSION = System.Diagnostics.FileVersionInfo.GetVersionInfo(System.Reflection.Assembly.GetExecutingAssembly().Location).ProductVersion;
 
         // 彩蛋诗词
         private readonly string poemText = "巴女浅醉黄鹤楼，\n江风吹皱美人绸。\n此别经年何时了，\n云锁巫山夜未犹。\n\n";
@@ -48,6 +48,9 @@ namespace ChromeUpdaterWPF
 
             // 启动时检测
             await CheckAndDisplayVersionAsync();
+
+            // 🌟 新增：启动时自动扫描一次本地与系统 AI 模型垃圾
+            UpdateAiButtonStatus();
         }
 
         private void CheckRunningDirectory()
@@ -110,6 +113,69 @@ namespace ChromeUpdaterWPF
             {
                 return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "User Data");
             }
+        }
+
+        // 🌟 正则探测 AI 模型目录（OptGuideOnDeviceModel）是否存在且里面有物理文件
+        private bool IsAiModelPresent(out List<string> foundPaths)
+        {
+            foundPaths = new List<string>();
+
+            // 1. 便携版路径
+            string portableAiPath = Path.Combine(userDataDir, "OptGuideOnDeviceModel");
+            if (Directory.Exists(portableAiPath) && Directory.GetFiles(portableAiPath, "*", SearchOption.AllDirectories).Length > 0)
+            {
+                foundPaths.Add(portableAiPath);
+            }
+
+            // 2. 本地 C 盘路径
+            try
+            {
+                string localAiPath = Path.Combine(GetLocalUserDataDir(), "OptGuideOnDeviceModel");
+                if (Directory.Exists(localAiPath) && Directory.GetFiles(localAiPath, "*", SearchOption.AllDirectories).Length > 0)
+                {
+                    foundPaths.Add(localAiPath);
+                }
+            }
+            catch { }
+
+            return foundPaths.Count > 0;
+        }
+
+        // 🌟 核心升级：按照规则动态刷新 AI 体检按钮状态和颜色
+        private void UpdateAiButtonStatus()
+        {
+            try
+            {
+                bool chromeExists = (Directory.Exists(portableDir) && File.Exists(chromeExe)) || Directory.Exists(GetLocalUserDataDir());
+
+                if (!chromeExists)
+                {
+                    // 1、未检测到浏览器时 ➔ 显示 「AI 模型体检」（按钮灰色，不可点击）
+                    btnAICheck.Content = "AI 模型体检";
+                    btnAICheck.IsEnabled = false;
+                    btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(149, 165, 166)); // #95A5A6 灰色
+                    btnAICheck.ToolTip = "未检测到本地或系统 Chrome 浏览器";
+                    return;
+                }
+
+                if (IsAiModelPresent(out List<string> foundPaths))
+                {
+                    // 3、检测到存在 AI 垃圾时 ➔ 显示 「存在AI模型」（鼠标放上去提示，按钮橙色，点击可执行清理）
+                    btnAICheck.Content = "存在AI模型";
+                    btnAICheck.IsEnabled = true;
+                    btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(211, 84, 0)); // #D35400 深橙色
+                    btnAICheck.ToolTip = "点击可清理！！！";
+                }
+                else
+                {
+                    // 2、检测到浏览器但无 AI 垃圾时 ➔ 显示 「纯净无AI模型」（按钮状态正常，按钮紫色，点击无反应）
+                    btnAICheck.Content = "纯净无AI模型";
+                    btnAICheck.IsEnabled = true;
+                    btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(155, 89, 182)); // #9B59B6 皇家紫
+                    btnAICheck.ToolTip = "恭喜！当前环境非常纯净，没有 AI 模型垃圾文件。";
+                }
+            }
+            catch { }
         }
 
         // ================== 🌟 极客级环境注入：纯原生正则免 DLL 注入引擎 (双向注入) ==================
@@ -180,7 +246,7 @@ namespace ChromeUpdaterWPF
                 "optimization-guide-on-device-model@2", // [必关] 彻底禁止 Chrome 后台偷下 4GB 的 Gemini Nano AI 模型
                 "prompt-api-for-gemini-nano@2",         // [必关] 额外封锁：禁用网页 Prompt API，防止网页唤醒 AI 重新下载
                 "ai-mode-omnibox-entrypoint@2",         // [必关] 额外封锁：隐藏地址栏中自动弹出的 "Ask Gemini" 快捷入口
-                "glic@2",                               // [必关] 彻底屏蔽 146+ 新版标签栏/工具栏中新增的 "问问 Gemini" (glic) 浮动窗口
+                "glic@2",                               // [必关] 彻底屏蔽 146+ 新版标签栏/工具栏中新增的 "问问 Gemini" (glic) 浮动窗口与右键菜单
                 "summarization-api-for-gemini-nano@2",  // [必关] 禁用本地 Gemini Nano 总结 API 接口
                 "compose@2",                            // [必关] 禁用 Help me write 等 AI 辅助撰写功能
                 
@@ -325,7 +391,12 @@ namespace ChromeUpdaterWPF
         // ================== 🌟 业务逻辑：启动与切换下拉菜单时的智能比对 ==================
         private async void CmbChannel_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (IsLoaded) await CheckAndDisplayVersionAsync();
+            if (IsLoaded)
+            {
+                await CheckAndDisplayVersionAsync();
+                // 🌟 新增：切换通道时，本地 C 盘 AI 路径改变，自动重刷按钮状态
+                UpdateAiButtonStatus();
+            }
         }
 
         // 🌟 修复 2a/2b：亮起红色 (#E74C3C) 且加粗，其余回弹灰色
@@ -669,6 +740,66 @@ namespace ChromeUpdaterWPF
             else MessageBox.Show("请先检查并更新！");
         }
 
+        // 🌟 新增：主界面 AI 体检按钮的点击事件 (负责根据状态机执行相应逻辑)
+        private void BtnAICheck_Click(object sender, RoutedEventArgs e)
+        {
+            // 如果是纯净无AI模型，点击按钮无任何反应
+            if (!IsAiModelPresent(out List<string> foundPaths))
+            {
+                return;
+            }
+
+            // 如果检测到本地/系统存在 AI 模型缓存大垃圾，开始物理超度
+            var result = MessageBox.Show(
+                "【AI 模型极客清理】\n\n检测到本地便携版或系统 Chrome 的 UserData 目录中存在已下载的本地 AI 模型 (Gemini Nano)！\n\n这些模型文件通常在后台偷偷下载运行并占用高达 4GB 的系统磁盘空间。\n\n是否立即物理清理这些 AI 模型缓存文件，并强力锁定系统安全策略阻断未来再次静默下载？",
+                "确认清理 AI 模型", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                // 先写入优化参数禁用未来下载（双管齐下）
+                ApplyChromeTuningConfig();
+
+                int deletedCount = 0;
+                long freedBytes = 0;
+
+                // 物理删除目录
+                foreach (var path in foundPaths)
+                {
+                    try
+                    {
+                        if (Directory.Exists(path))
+                        {
+                            // 计算释放的空间
+                            var files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
+                            foreach (var file in files)
+                            {
+                                try { freedBytes += new FileInfo(file).Length; } catch { }
+                            }
+
+                            Directory.Delete(path, true);
+                            deletedCount++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"清理目录 {path} 失败，部分文件可能正被正在运行的 Chrome 独占锁定。\n\n请您先关闭所有浏览器窗口，然后重试！\n\n错误信息: {ex.Message}", "清理失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                        UpdateAiButtonStatus();
+                        return;
+                    }
+                }
+
+                double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2);
+                string freedText = freedMb > 1024
+                    ? $"{Math.Round(freedMb / 1024, 2)} GB"
+                    : $"{freedMb} MB";
+
+                MessageBox.Show($"【清理完成】\n\n成功物理清除 {deletedCount} 个 AI 模型缓存目录！\n共释放磁盘空间: {freedText}\n\n已为您注入最新安全机制，彻底锁死 AI 静默下载！", "清理成功", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                // 重新扫描刷新状态
+                UpdateAiButtonStatus();
+            }
+        }
+
         // ================== 更新核心逻辑 ==================
         public async void BtnUpdate_Click(object sender, RoutedEventArgs e)
         {
@@ -740,6 +871,8 @@ namespace ChromeUpdaterWPF
                 StopBlinking();
                 OverlayPanel.Visibility = Visibility.Collapsed;
                 await CheckAndDisplayVersionAsync();
+                // 🌟 更新完成后刷新一次本地 AI 缓存状态
+                UpdateAiButtonStatus();
                 btnUpdate.IsEnabled = btnLaunch.IsEnabled = true;
             }
         }
