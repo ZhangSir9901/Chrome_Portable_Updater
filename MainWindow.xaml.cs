@@ -128,11 +128,14 @@ namespace ChromeUpdaterWPF
                 string newExe = currentExe + ".new";
                 string oldExe = currentExe + ".old";
 
+                // 🌟 核心终极修复：为 .exe 的下载链接强加时间戳，彻底击穿 CDN 的二进制大文件死缓存！
+                string noCacheUrl = downloadUrl + (downloadUrl.Contains("?") ? "&" : "?") + "t=" + DateTime.Now.Ticks;
+
                 // 开始下载最新 EXE 到同目录下
                 using (var client = CreateSafeWebClient())
                 {
                     client.DownloadProgressChanged += (s, ev) => { progressBar.Value = ev.ProgressPercentage; };
-                    await client.DownloadFileTaskAsync(new Uri(downloadUrl), newExe);
+                    await client.DownloadFileTaskAsync(new Uri(noCacheUrl), newExe);
                 }
 
                 lblOverlayStatus.Text = "下载完成，正在执行无感影子热替换...";
@@ -155,8 +158,6 @@ namespace ChromeUpdaterWPF
                 OverlayPanel.Visibility = Visibility.Collapsed;
             }
         }
-        // ================== 结束 ==================
-
 
         private void CheckRunningDirectory()
         {
