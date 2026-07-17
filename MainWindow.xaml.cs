@@ -74,13 +74,21 @@ namespace ChromeUpdaterWPF
         {
             try
             {
+                // 🌟 核心：使用国内两大最稳的 GitHub 直连节点，哪个能连通就用哪个，且完全没有长时间缓存！
+                string[] jsonUrls = {
+                    $"https://ghproxy.net/https://raw.githubusercontent.com/ZhangSir9901/Chrome_Portable_Updater/main/Release/update.json?t={DateTime.Now.Ticks}",
+                    $"https://raw.kkgithub.com/ZhangSir9901/Chrome_Portable_Updater/main/Release/update.json?t={DateTime.Now.Ticks}"
+                };
+
                 using (var client = CreateSafeWebClient())
                 {
-                    // 🌟 修复 1：路径加上了 /Release/ 文件夹，与你的 GitHub 真实路径匹配
-                    // 🌟 修复 2：末尾加上了动态时间戳 (?t=...)，强制穿透本地与部分 CDN 缓存，保证每次获取的都是最新状态！
-                    string targetUrl = $"https://cdn.jsdelivr.net/gh/ZhangSir9901/Chrome_Portable_Updater@main/Release/update.json?t={DateTime.Now.Ticks}";
+                    string json = "";
+                    foreach (string url in jsonUrls)
+                    {
+                        try { json = await client.DownloadStringTaskAsync(url); break; } catch { continue; }
+                    }
 
-                    string json = await client.DownloadStringTaskAsync(targetUrl);
+                    if (string.IsNullOrEmpty(json)) return;
 
                     Match mVer = Regex.Match(json, @"""version""\s*:\s*""([^""]+)""");
                     Match mUrl = Regex.Match(json, @"""url""\s*:\s*""([^""]+)""");
@@ -90,19 +98,18 @@ namespace ChromeUpdaterWPF
                         string onlineVer = mVer.Groups[1].Value;
                         string downloadUrl = mUrl.Groups[1].Value;
 
-                        // 版本对比 (针对 2026-07-17 这种日期格式，直接使用字符串字典序比对)
+                        // 版本对比
                         if (string.Compare(onlineVer, APP_VERSION, StringComparison.OrdinalIgnoreCase) > 0)
                         {
-                            // 发现新版本！隐藏旧文本，显示酷炫闪动按钮
                             lblAppVersion.Visibility = Visibility.Collapsed;
                             btnAppUpdate.Visibility = Visibility.Visible;
                             btnAppUpdate.Content = $"🚀 发现新版本 {onlineVer}，点击立即自动升级！";
-                            btnAppUpdate.Tag = downloadUrl; // 隐蔽地存储下载链接
+                            btnAppUpdate.Tag = downloadUrl;
                         }
                     }
                 }
             }
-            catch { } // 网络不通或发生 404 则静默跳过，绝不干扰主流程
+            catch { }
         }
 
         private async void BtnAppUpdate_Click(object sender, RoutedEventArgs e)
@@ -938,7 +945,8 @@ namespace ChromeUpdaterWPF
         private WebClient CreateSafeWebClient()
         {
             WebClient c = new WebClient { Proxy = null };
-            c.Headers[HttpRequestHeader.UserAgent] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0";
+            c.Headers[HttpRequestHeader.UserAgent] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+            c.Headers[HttpRequestHeader.Accept] = "*/*"; // 🌟 修复：增加 Accept 头，防止被防 DDoS 防火墙误判为爬虫而返回 403
             return c;
         }
 
