@@ -76,8 +76,11 @@ namespace ChromeUpdaterWPF
             {
                 using (var client = CreateSafeWebClient())
                 {
-                    // 利用 jsDelivr 直连 Github 获取 JSON，国内绝对不墙且极速
-                    string json = await client.DownloadStringTaskAsync("https://cdn.jsdelivr.net/gh/ZhangSir9901/Chrome_Portable_Updater@main/update.json");
+                    // 🌟 修复 1：路径加上了 /Release/ 文件夹，与你的 GitHub 真实路径匹配
+                    // 🌟 修复 2：末尾加上了动态时间戳 (?t=...)，强制穿透本地与部分 CDN 缓存，保证每次获取的都是最新状态！
+                    string targetUrl = $"https://cdn.jsdelivr.net/gh/ZhangSir9901/Chrome_Portable_Updater@main/Release/update.json?t={DateTime.Now.Ticks}";
+
+                    string json = await client.DownloadStringTaskAsync(targetUrl);
 
                     Match mVer = Regex.Match(json, @"""version""\s*:\s*""([^""]+)""");
                     Match mUrl = Regex.Match(json, @"""url""\s*:\s*""([^""]+)""");
@@ -87,7 +90,7 @@ namespace ChromeUpdaterWPF
                         string onlineVer = mVer.Groups[1].Value;
                         string downloadUrl = mUrl.Groups[1].Value;
 
-                        // 版本对比 (针对 2026-07-17 这种日期格式，直接使用字符串字典序比对即可)
+                        // 版本对比 (针对 2026-07-17 这种日期格式，直接使用字符串字典序比对)
                         if (string.Compare(onlineVer, APP_VERSION, StringComparison.OrdinalIgnoreCase) > 0)
                         {
                             // 发现新版本！隐藏旧文本，显示酷炫闪动按钮
@@ -99,7 +102,7 @@ namespace ChromeUpdaterWPF
                     }
                 }
             }
-            catch { } // 网络不通则静默跳过，绝不干扰主流程
+            catch { } // 网络不通或发生 404 则静默跳过，绝不干扰主流程
         }
 
         private async void BtnAppUpdate_Click(object sender, RoutedEventArgs e)
