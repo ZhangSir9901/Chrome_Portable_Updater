@@ -512,7 +512,10 @@ namespace ChromeUpdaterWPF
 
             string os = GetOsType();
             int channelIndex = cmbChannel.SelectedIndex;
-            string onlineVer = await Task.Run(() => FetchLatestVersionFromAli(os, channelIndex));
+
+            // 🌟 传入 32/64 位参数
+            bool is64 = rdo64.IsChecked == true;
+            string onlineVer = await Task.Run(() => FetchLatestVersion(os, channelIndex, is64));
 
             if (string.IsNullOrEmpty(onlineVer))
             {
@@ -807,7 +810,10 @@ namespace ChromeUpdaterWPF
 
             string os = GetOsType();
             int channelIndex = cmbChannel.SelectedIndex;
-            string onlineVer = await Task.Run(() => FetchLatestVersionFromAli(os, channelIndex));
+
+            // 🌟 传入 32/64 位参数
+            bool is64 = rdo64.IsChecked == true;
+            string onlineVer = await Task.Run(() => FetchLatestVersion(os, channelIndex, is64));
 
             if (string.IsNullOrEmpty(onlineVer)) { MessageBox.Show("网络连接超时！"); btnUpdate.IsEnabled = btnLaunch.IsEnabled = true; return; }
 
@@ -968,20 +974,60 @@ namespace ChromeUpdaterWPF
             throw new Exception("7zr.exe 下载失败");
         }
 
-        private string FetchLatestVersionFromAli(string osType, int channelIndex)
+        // 🌟 核心终极修复：伪装 Chrome 原生 Omaha 协议，直接向谷歌获取 100% 真实的普通消费者版本（国内免翻墙直连）
+        private string FetchLatestVersion(string osType, int channelIndex, bool is64)
         {
-            if (osType == "XP") return "49.0.2623.112"; if (osType == "7/8") return "109.0.5414.120";
+            if (osType == "XP") return "49.0.2623.112";
+            if (osType == "7/8") return "109.0.5414.120";
+
+            // 根据用户选项构建请求参数
+            string ap = is64 ?
+                (channelIndex == 0 ? "x64-stable-statsdef_1" : channelIndex == 1 ? "x64-beta-statsdef_1" : channelIndex == 2 ? "x64-dev-statsdef_1" : "x64-canary-statsdef_1") :
+                (channelIndex == 0 ? "stable-arch_x86-statsdef_1" : channelIndex == 1 ? "beta-arch_x86-statsdef_1" : channelIndex == 2 ? "dev-arch_x86-statsdef_1" : "canary-arch_x86-statsdef_1");
+
+            string appID = channelIndex == 3 ? "{4ea16ac7-fd5a-47c3-875b-dbf8a2000d21}" : "{8A69D345-D564-463C-AFF1-A69D9E530F96}";
+            string arch = is64 ? "x64" : "x86";
+
+            // 构造 Chrome 官方的 XML 询问包，告诉谷歌我们版本是 0.0.0.0，求最新版本
+            string xmlData = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<request protocol=""3.0"" updater=""Omaha"" updaterversion=""1.3.36.352"" shell_version=""1.3.36.352"" ismachine=""0"" sessionid=""{{00000000-0000-0000-0000-000000000000}}"" installsource=""ondemandcheckforupdate"" requestid=""{{00000000-0000-0000-0000-000000000000}}"" dedup=""cr"">
+  <os platform=""win"" version=""10.0"" sp="""" arch=""{arch}""/>
+  <app appid=""{appID}"" version=""0.0.0.0"" nextversion="""" ap=""{ap}"" lang=""zh-CN"" brand=""GGLS"" client="""" installage=""-1"">
+    <updatecheck/>
+  </app>
+</request>";
+
             try
             {
-                using (var c = CreateSafeWebClient())
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                byte[] postBytes = System.Text.Encoding.UTF8.GetBytes(xmlData);
+
+                // 请求谷歌官方升级服务器
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create("https://update.googleapis.com/service/update2");
+                req.Method = "POST";
+                req.ContentType = "application/x-www-form-urlencoded";
+                req.ContentLength = postBytes.Length;
+                req.Timeout = 8000;
+
+                using (Stream reqStream = req.GetRequestStream())
                 {
-                    string json = c.DownloadString("https://registry.npmmirror.com/-/binary/chrome-for-testing/last-known-good-versions.json");
-                    string ch = channelIndex == 0 ? "Stable" : channelIndex == 1 ? "Beta" : channelIndex == 2 ? "Dev" : "Canary";
-                    Match m = Regex.Match(json, @"""" + ch + @"""\s*:\s*\{[^}]*""version""\s*:\s*""([^""]+)""");
-                    if (m.Success) return m.Groups[1].Value;
+                    reqStream.Write(postBytes, 0, postBytes.Length);
+                }
+
+                // 从返回的 XML 数据中正则提取谷歌回应的最新真实版本号
+                using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+                using (StreamReader sr = new StreamReader(res.GetResponseStream()))
+                {
+                    string responseXml = sr.ReadToEnd();
+                    Match m = Regex.Match(responseXml, @"<manifest\s+version=""([^""]+)""");
+                    if (m.Success)
+                    {
+                        return m.Groups[1].Value; // 精准返回，例如 150.0.7871.129
+                    }
                 }
             }
             catch { }
+
             return "126.0.0.0";
         }
 
