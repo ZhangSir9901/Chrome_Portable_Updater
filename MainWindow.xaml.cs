@@ -261,8 +261,43 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
+        // ================== 🌟 极客防线模块：组策略 + 物理文件占位锁 ==================
+        private void ApplyAiGroupPolicy()
+        {
+            try
+            {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Policies\Google\Chrome"))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue("GenAILocalFoundationalModelSettings", 1, Microsoft.Win32.RegistryValueKind.DWord);
+                        key.SetValue("OptimizationGuideModelDownloading", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void LockAiDirectoryIfClean(string uDir)
+        {
+            try
+            {
+                string aiPath = Path.Combine(uDir, "OptGuideOnDeviceModel");
+                // 只有当非文件夹（即纯净状态）且未上锁时，才植入只读占位文件
+                if (!Directory.Exists(aiPath) && !File.Exists(aiPath))
+                {
+                    File.WriteAllText(aiPath, "LOCKED_BY_CHROME_PORTABLE_UPDATER");
+                    File.SetAttributes(aiPath, FileAttributes.ReadOnly | FileAttributes.Hidden);
+                }
+            }
+            catch { }
+        }
+
         private void ApplyChromeTuningConfig()
         {
+            // 🌟 1. 注入 HKCU 组策略防线（无需管理员权限，最高优先级）
+            ApplyAiGroupPolicy();
+
             try
             {
                 var chromeProcesses = Process.GetProcessesByName("chrome");
@@ -302,6 +337,9 @@ namespace ChromeUpdaterWPF
 
                     prefContent = InjectPreferences(prefContent);
                     File.WriteAllText(prefPath, prefContent);
+
+                    // 🌟 2. 对纯净环境自动上物理占位锁
+                    LockAiDirectoryIfClean(uDir);
                 }
                 catch (Exception ex)
                 {
@@ -763,7 +801,7 @@ namespace ChromeUpdaterWPF
             if (!IsAiModelPresent(out List<string> foundPaths)) return;
 
             var result = MessageBox.Show(
-                "【AI 模型极客清理】\n\n检测到本地便携版或系统 Chrome 的 UserData 目录中存在已下载的本地 AI 模型 (Gemini Nano)！\n\n这些模型文件通常在后台偷偷下载运行并占用高达 4GB 的系统磁盘空间。\n\n是否立即物理清理这些 AI 模型缓存文件，并强力锁定系统安全策略阻断未来再次静默下载？",
+                "【AI 模型极客清理】\n\n检测到本地便携版或系统 Chrome 的 UserData 目录中存在已下载的本地 AI 模型 (Gemini Nano)！\n\n这些模型文件通常在后台偷偷下载运行并占用高达 4GB 的系统磁盘空间。\n\n是否立即物理清理这些 AI 模型缓存文件，并强力锁定系统组策略与文件系统占位锁，彻底封死未来再次静默下载？",
                 "确认清理 AI 模型", MessageBoxButton.YesNo, MessageBoxImage.Question);
 
             if (result == MessageBoxResult.Yes)
@@ -784,8 +822,17 @@ namespace ChromeUpdaterWPF
                             {
                                 try { freedBytes += new FileInfo(file).Length; } catch { }
                             }
+
+                            // 1. 物理删除 4GB 垃圾文件夹
                             Directory.Delete(path, true);
                             deletedCount++;
+
+                            // 🌟 2. 核心死锁：在原位置强行植入只读+隐藏的同名占位文件，让 Chrome 再也建立不了文件夹！
+                            if (!File.Exists(path))
+                            {
+                                File.WriteAllText(path, "LOCKED_BY_CHROME_PORTABLE_UPDATER");
+                                File.SetAttributes(path, FileAttributes.ReadOnly | FileAttributes.Hidden);
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -799,7 +846,7 @@ namespace ChromeUpdaterWPF
                 double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2);
                 string freedText = freedMb > 1024 ? $"{Math.Round(freedMb / 1024, 2)} GB" : $"{freedMb} MB";
 
-                MessageBox.Show($"【清理完成】\n\n成功物理清除 {deletedCount} 个 AI 模型缓存目录！\n共释放磁盘空间: {freedText}\n\n已为您注入最新安全机制，彻底锁死 AI 静默下载！", "清理成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show($"【清理与双重死锁完成】\n\n成功物理清除 {deletedCount} 个 AI 模型缓存目录！\n共释放磁盘空间: {freedText}\n\n已为您强力注入 HKCU 组策略并建立文件系统物理占位锁，彻底断绝 AI 模型下载！", "清理成功", MessageBoxButton.OK, MessageBoxImage.Information);
 
                 UpdateAiButtonStatus();
             }
@@ -947,7 +994,7 @@ namespace ChromeUpdaterWPF
         {
             WebClient c = new WebClient { Proxy = null };
             c.Headers[HttpRequestHeader.UserAgent] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-            c.Headers[HttpRequestHeader.Accept] = "*/*"; // 🌟 修复：增加 Accept 头，防止被防 DDoS 防火墙误判为爬虫而返回 403
+            c.Headers[HttpRequestHeader.Accept] = "*/*";
             return c;
         }
 
