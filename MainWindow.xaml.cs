@@ -74,7 +74,6 @@ namespace ChromeUpdaterWPF
         {
             try
             {
-                // 🌟 核心：使用国内两大最稳的 GitHub 直连节点，哪个能连通就用哪个，且完全没有长时间缓存！
                 string[] jsonUrls = {
                     $"https://ghproxy.net/https://raw.githubusercontent.com/ZhangSir9901/Chrome_Portable_Updater/main/Release/update.json?t={DateTime.Now.Ticks}",
                     $"https://raw.kkgithub.com/ZhangSir9901/Chrome_Portable_Updater/main/Release/update.json?t={DateTime.Now.Ticks}"
@@ -98,7 +97,6 @@ namespace ChromeUpdaterWPF
                         string onlineVer = mVer.Groups[1].Value;
                         string downloadUrl = mUrl.Groups[1].Value;
 
-                        // 版本对比
                         if (string.Compare(onlineVer, APP_VERSION, StringComparison.OrdinalIgnoreCase) > 0)
                         {
                             lblAppVersion.Visibility = Visibility.Collapsed;
@@ -128,10 +126,8 @@ namespace ChromeUpdaterWPF
                 string newExe = currentExe + ".new";
                 string oldExe = currentExe + ".old";
 
-                // 🌟 核心终极修复：为 .exe 的下载链接强加时间戳，彻底击穿 CDN 的二进制大文件死缓存！
                 string noCacheUrl = downloadUrl + (downloadUrl.Contains("?") ? "&" : "?") + "t=" + DateTime.Now.Ticks;
 
-                // 开始下载最新 EXE 到同目录下
                 using (var client = CreateSafeWebClient())
                 {
                     client.DownloadProgressChanged += (s, ev) => { progressBar.Value = ev.ProgressPercentage; };
@@ -140,14 +136,12 @@ namespace ChromeUpdaterWPF
 
                 lblOverlayStatus.Text = "下载完成，正在执行无感影子热替换...";
                 progressBar.IsIndeterminate = true;
-                await Task.Delay(800); // 留一点视觉喘息时间
+                await Task.Delay(800);
 
-                // 🌟 核心：影子重命名热替换法
                 if (File.Exists(oldExe)) File.Delete(oldExe);
-                File.Move(currentExe, oldExe);  // 正在运行的 EXE 改名为 .old
-                File.Move(newExe, currentExe);  // 刚下载好的新文件改回原名
+                File.Move(currentExe, oldExe);
+                File.Move(newExe, currentExe);
 
-                // 金蝉脱壳，拉起新的自己，然后自毁当前进程
                 Process.Start(currentExe);
                 Application.Current.Shutdown();
             }
@@ -238,7 +232,7 @@ namespace ChromeUpdaterWPF
                 {
                     btnAICheck.Content = "AI 模型体检";
                     btnAICheck.IsEnabled = false;
-                    btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(149, 165, 166)); // #95A5A6
+                    btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(149, 165, 166));
                     btnAICheck.ToolTip = "未检测到本地或系统 Chrome 浏览器";
                     return;
                 }
@@ -247,21 +241,21 @@ namespace ChromeUpdaterWPF
                 {
                     btnAICheck.Content = "存在AI模型";
                     btnAICheck.IsEnabled = true;
-                    btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(211, 84, 0)); // #D35400
+                    btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(211, 84, 0));
                     btnAICheck.ToolTip = "点击可清理！！！";
                 }
                 else
                 {
                     btnAICheck.Content = "纯净无AI模型";
                     btnAICheck.IsEnabled = true;
-                    btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(155, 89, 182)); // #9B59B6
+                    btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(155, 89, 182));
                     btnAICheck.ToolTip = "恭喜！当前环境非常纯净，没有 AI 模型垃圾文件。";
                 }
             }
             catch { }
         }
 
-        // ================== 🌟 极客防线模块：组策略 + 物理文件占位锁 ==================
+        // ================== 🌟 极客防线模块：组策略 + 物理文件占位锁 + 缓存管控 ==================
         private void ApplyAiGroupPolicy()
         {
             try
@@ -283,7 +277,6 @@ namespace ChromeUpdaterWPF
             try
             {
                 string aiPath = Path.Combine(uDir, "OptGuideOnDeviceModel");
-                // 只有当非文件夹（即纯净状态）且未上锁时，才植入只读占位文件
                 if (!Directory.Exists(aiPath) && !File.Exists(aiPath))
                 {
                     File.WriteAllText(aiPath, "LOCKED_BY_CHROME_PORTABLE_UPDATER");
@@ -293,10 +286,80 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
+        // 🌟 新增：写组策略控制缓存上限与崩溃日志
+        private void ApplyCacheGroupPolicy()
+        {
+            try
+            {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Policies\Google\Chrome"))
+                {
+                    if (key != null)
+                    {
+                        // 1. 禁止无用缓存写入（Metrics/Crashpad）
+                        if (rdoDisableCacheYes.IsChecked == true)
+                        {
+                            key.SetValue("MetricsReportingEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                        }
+                        else
+                        {
+                            try { key.DeleteValue("MetricsReportingEnabled"); } catch { }
+                        }
+
+                        // 2. 缓存上限控制 (DiskCacheSize - 单位为字节)
+                        if (rdoLimitYes.IsChecked == true && double.TryParse(txtCacheLimit.Text, out double gb) && gb > 0)
+                        {
+                            long bytes = (long)(gb * 1024 * 1024 * 1024);
+                            // Chrome 支持 DWORD 限制，若大于 4GB 则打折或者限制在 4GB 以内
+                            if (bytes > int.MaxValue) bytes = int.MaxValue;
+                            key.SetValue("DiskCacheSize", (int)bytes, Microsoft.Win32.RegistryValueKind.DWord);
+                        }
+                        else
+                        {
+                            try { key.DeleteValue("DiskCacheSize"); } catch { }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 🌟 新增：物理锁定 GPU/着色器无用缓存目录
+        private void LockDisposableCachesIfEnabled(string uDir)
+        {
+            string[] disposableFolders = { "GPUCache", "ShaderCache", "GrShaderCache", "GraphiteDawnCache", "Crashpad" };
+            foreach (var folder in disposableFolders)
+            {
+                try
+                {
+                    string targetPath = Path.Combine(uDir, folder);
+                    if (rdoDisableCacheYes.IsChecked == true)
+                    {
+                        if (Directory.Exists(targetPath)) Directory.Delete(targetPath, true);
+                        if (!File.Exists(targetPath))
+                        {
+                            File.WriteAllText(targetPath, "LOCKED_BY_CHROME_PORTABLE_UPDATER");
+                            File.SetAttributes(targetPath, FileAttributes.ReadOnly | FileAttributes.Hidden);
+                        }
+                    }
+                    else
+                    {
+                        // 如果用户取消禁写，解除物理文件锁
+                        if (File.Exists(targetPath))
+                        {
+                            File.SetAttributes(targetPath, FileAttributes.Normal);
+                            File.Delete(targetPath);
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
         private void ApplyChromeTuningConfig()
         {
-            // 🌟 1. 注入 HKCU 组策略防线（无需管理员权限，最高优先级）
+            // 🌟 1. 注入 HKCU 组策略防线（AI 防御 + 缓存控制）
             ApplyAiGroupPolicy();
+            ApplyCacheGroupPolicy();
 
             try
             {
@@ -304,7 +367,7 @@ namespace ChromeUpdaterWPF
                 if (chromeProcesses.Length > 0)
                 {
                     MessageBox.Show(
-                        "【参数注入提示】\n\n检测到您的系统原生 Chrome 浏览器正在后台运行。\n\n由于运行中的 Chrome 会独占并锁定配置文件，为了成功彻底屏蔽本地的【问问 Gemini/AI 功能】，请您先保存好当前网页后，手动关闭全部 Chrome 窗口。\n\n关闭后，请点击本窗口的【确定】按钮，继续进行深度优化参数写入！",
+                        "【参数注入提示】\n\n检测到您的系统原生 Chrome 浏览器正在后台运行。\n\n由于运行中的 Chrome 会独占并锁定配置文件，为了成功彻底屏蔽本地的【问问 Gemini/AI 功能】和【缓存控制】，请您先保存好当前网页后，手动关闭全部 Chrome 窗口。\n\n关闭后，请点击本窗口的【确定】按钮，继续进行深度优化参数写入！",
                         "请先关闭 Chrome", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
@@ -338,8 +401,9 @@ namespace ChromeUpdaterWPF
                     prefContent = InjectPreferences(prefContent);
                     File.WriteAllText(prefPath, prefContent);
 
-                    // 🌟 2. 对纯净环境自动上物理占位锁
+                    // 🌟 2. 自动加装物理占位锁
                     LockAiDirectoryIfClean(uDir);
+                    LockDisposableCachesIfEnabled(uDir);
                 }
                 catch (Exception ex)
                 {
@@ -457,6 +521,98 @@ namespace ChromeUpdaterWPF
             json = json.Replace(",,", ",").Replace(",}", "}").Replace("{,", "{");
             return json;
         }
+
+        // ================== 🌟 缓存控件交互事件事件响应 ==================
+        public void RdoDisableCache_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyChromeTuningConfig();
+        }
+
+        public void RdoLimit_Click(object sender, RoutedEventArgs e)
+        {
+            if (rdoLimitYes.IsChecked == true)
+            {
+                borderCacheLimit.IsEnabled = true;
+                txtCacheLimit.IsEnabled = true;
+            }
+            else
+            {
+                txtCacheLimit.IsEnabled = false;
+            }
+            ApplyChromeTuningConfig();
+        }
+
+        public void TxtCacheLimit_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            // 限制输入框只能输入数字和小数点
+            e.Handled = !Regex.IsMatch(e.Text, @"[\d\.]");
+        }
+
+        public void TxtCacheLimit_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (IsLoaded) ApplyChromeTuningConfig();
+        }
+
+        // 🌟 新增：手动一键清理无用缓存事件
+        public void BtnCleanCache_Click(object sender, RoutedEventArgs e)
+        {
+            var targetUserDirs = new List<string> { userDataDir };
+            try
+            {
+                string localPath = GetLocalUserDataDir();
+                if (!string.IsNullOrEmpty(localPath)) targetUserDirs.Add(localPath);
+            }
+            catch { }
+
+            long freedBytes = 0;
+            int cleanedCount = 0;
+
+            // 可以安全彻底清空的垃圾缓存相对路径列表 (不会影响 Cookies/密码/历史/书签)
+            string[] relativeCachePaths = {
+                @"Default\Cache",
+                @"Default\Code Cache",
+                @"Default\GPUCache",
+                @"Default\Media Cache",
+                @"GPUCache",
+                @"ShaderCache",
+                @"GrShaderCache",
+                @"GraphiteDawnCache",
+                @"Crashpad",
+                @"BrowserMetrics"
+            };
+
+            foreach (var uDir in targetUserDirs)
+            {
+                foreach (var relPath in relativeCachePaths)
+                {
+                    try
+                    {
+                        string fullPath = Path.Combine(uDir, relPath);
+                        if (Directory.Exists(fullPath))
+                        {
+                            var files = Directory.GetFiles(fullPath, "*", SearchOption.AllDirectories);
+                            foreach (var f in files)
+                            {
+                                try { freedBytes += new FileInfo(f).Length; } catch { }
+                            }
+
+                            Directory.Delete(fullPath, true);
+                            cleanedCount++;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // 同步应用一次环境限制与文件锁
+            ApplyChromeTuningConfig();
+
+            double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2);
+            string freedText = freedMb > 1024 ? $"{Math.Round(freedMb / 1024, 2)} GB" : $"{freedMb} MB";
+
+            MessageBox.Show($"【缓存清理完成】\n\n成功扫描并彻底清空了 {cleanedCount} 个无用临时缓存目录！\n共为您释放了磁盘空间: {freedText}\n\n已成功保留您的全部密码、Cookies、网页历史与书签数据！", "清理成功", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        // ================== 结束 ==================
 
         public void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) { this.DragMove(); }
         public void BtnMinimize_Click(object sender, RoutedEventArgs e) { this.WindowState = WindowState.Minimized; }
@@ -823,11 +979,9 @@ namespace ChromeUpdaterWPF
                                 try { freedBytes += new FileInfo(file).Length; } catch { }
                             }
 
-                            // 1. 物理删除 4GB 垃圾文件夹
                             Directory.Delete(path, true);
                             deletedCount++;
 
-                            // 🌟 2. 核心死锁：在原位置强行植入只读+隐藏的同名占位文件，让 Chrome 再也建立不了文件夹！
                             if (!File.Exists(path))
                             {
                                 File.WriteAllText(path, "LOCKED_BY_CHROME_PORTABLE_UPDATER");
