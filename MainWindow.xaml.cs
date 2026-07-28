@@ -35,7 +35,7 @@ namespace ChromeUpdaterWPF
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // 🌟 启动清理：检查并物理粉碎前一次自升级遗留的影子旧文件
+            // 🌟 1. 启动清理：检查并物理粉碎前一次自升级遗留的影子旧文件
             CleanupOldUpdater();
 
             CheckRunningDirectory();
@@ -48,14 +48,61 @@ namespace ChromeUpdaterWPF
             // 绑定前台静态版本信息
             lblAppVersion.Text = $"当前升级器版本: {APP_VERSION}";
 
+            // 🌟 2. 核心新增：启动时自动读取并回显已设置的缓存策略状态
+            LoadAndApplySavedCacheSettings();
+
             // 启动时静默检测升级器自身新版本 (Fire and Forget)
             _ = CheckSelfUpdateAsync();
 
-            // 启动时检测浏览器更新状态
+            // 启动时检测浏览器更新状态 (会触发 UpdateBorderStyles，自动加粗标红选中的项目)
             await CheckAndDisplayVersionAsync();
 
             // 启动时自动扫描一次本地与系统 AI 模型垃圾
             UpdateAiButtonStatus();
+        }
+
+        // ================== 🌟 核心：启动时自动检测并回填缓存设置状态 ==================
+        private void LoadAndApplySavedCacheSettings()
+        {
+            try
+            {
+                // 1. 读取 HKCU 注册表组策略中的缓存设置
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Policies\Google\Chrome"))
+                {
+                    if (key != null)
+                    {
+                        // 检测是否开启了“禁止写入无用缓存”
+                        object metrics = key.GetValue("MetricsReportingEnabled");
+                        if (metrics != null && Convert.ToInt32(metrics) == 0)
+                        {
+                            rdoDisableCacheYes.IsChecked = true;
+                        }
+
+                        // 检测缓存上限控制
+                        object diskCache = key.GetValue("DiskCacheSize");
+                        if (diskCache != null)
+                        {
+                            long bytes = Convert.ToInt64(diskCache);
+                            if (bytes > 0)
+                            {
+                                rdoLimitYes.IsChecked = true;
+                                txtCacheLimit.IsEnabled = true;
+                                double gb = Math.Round((double)bytes / (1024 * 1024 * 1024), 1);
+                                if (gb <= 0) gb = 1;
+                                txtCacheLimit.Text = gb.ToString();
+                            }
+                        }
+                    }
+                }
+
+                // 2. 检查物理占位锁：如果 UserData 下的 GPUCache 已经被植入锁文件，同样回显为“是”
+                string portableGpuPath = Path.Combine(userDataDir, "GPUCache");
+                if (File.Exists(portableGpuPath))
+                {
+                    rdoDisableCacheYes.IsChecked = true;
+                }
+            }
+            catch { }
         }
 
         // ================== 🌟 极客级核心引擎：自更新与影子热替换 ==================
@@ -286,7 +333,6 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
-        // 🌟 写组策略控制缓存上限与崩溃日志（包含“否”与“不限”的解封删除逻辑）
         private void ApplyCacheGroupPolicy()
         {
             try
@@ -295,18 +341,15 @@ namespace ChromeUpdaterWPF
                 {
                     if (key != null)
                     {
-                        // 1. 禁止无用缓存写入（Metrics/Crashpad）
                         if (rdoDisableCacheYes.IsChecked == true)
                         {
                             key.SetValue("MetricsReportingEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
                         }
                         else
                         {
-                            // 点击“否”时解封：删除组策略项
                             try { key.DeleteValue("MetricsReportingEnabled"); } catch { }
                         }
 
-                        // 2. 缓存上限控制 (DiskCacheSize - 单位为字节)
                         if (rdoLimitYes.IsChecked == true && double.TryParse(txtCacheLimit.Text, out double gb) && gb > 0)
                         {
                             long bytes = (long)(gb * 1024 * 1024 * 1024);
@@ -315,7 +358,6 @@ namespace ChromeUpdaterWPF
                         }
                         else
                         {
-                            // 点击“不限”时解封：删除 DiskCacheSize 限制
                             try { key.DeleteValue("DiskCacheSize"); } catch { }
                         }
                     }
@@ -324,7 +366,6 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
-        // 🌟 物理锁定 GPU/着色器无用缓存目录（支持“否”解封）
         private void LockDisposableCachesIfEnabled(string uDir)
         {
             string[] disposableFolders = { "GPUCache", "ShaderCache", "GrShaderCache", "GraphiteDawnCache", "Crashpad" };
@@ -344,7 +385,6 @@ namespace ChromeUpdaterWPF
                     }
                     else
                     {
-                        // 点击“否”时解封：取消只读属性并删除占位文件，恢复 Chrome 正常写入
                         if (File.Exists(targetPath))
                         {
                             File.SetAttributes(targetPath, FileAttributes.Normal);
@@ -358,7 +398,6 @@ namespace ChromeUpdaterWPF
 
         private void ApplyChromeTuningConfig()
         {
-            // 1. 注入 HKCU 组策略防线
             ApplyAiGroupPolicy();
             ApplyCacheGroupPolicy();
 
@@ -402,7 +441,6 @@ namespace ChromeUpdaterWPF
                     prefContent = InjectPreferences(prefContent);
                     File.WriteAllText(prefPath, prefContent);
 
-                    // 2. 自动加装/解除物理占位锁
                     LockAiDirectoryIfClean(uDir);
                     LockDisposableCachesIfEnabled(uDir);
                 }
@@ -523,11 +561,23 @@ namespace ChromeUpdaterWPF
             return json;
         }
 
-        // ================== 🌟 缓存控件交互与动态样式刷新 ==================
+        // ================== 🌟 缓存控件交互事件与即时正向反馈 ==================
         public void RdoDisableCache_Click(object sender, RoutedEventArgs e)
         {
             ApplyChromeTuningConfig();
             UpdateBorderStyles(Directory.Exists(portableDir) && File.Exists(chromeExe), IsPortableChromeDefault(), ShortcutsExistOnDesktop());
+
+            // 🌟 1. 提供清晰的点击提示反馈
+            if (rdoDisableCacheYes.IsChecked == true)
+            {
+                lblStatus.Text = "已成功开启“无用缓存拦截”！(GPU/崩溃日志写阻断生效)";
+                lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113)); // 绿色
+            }
+            else
+            {
+                lblStatus.Text = "已解除无用缓存拦截，恢复 Chrome 默认写入机制。";
+                lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 73, 94));
+            }
         }
 
         public void RdoLimit_Click(object sender, RoutedEventArgs e)
@@ -535,6 +585,18 @@ namespace ChromeUpdaterWPF
             txtCacheLimit.IsEnabled = (rdoLimitYes.IsChecked == true);
             ApplyChromeTuningConfig();
             UpdateBorderStyles(Directory.Exists(portableDir) && File.Exists(chromeExe), IsPortableChromeDefault(), ShortcutsExistOnDesktop());
+
+            // 🌟 2. 提供清晰的点击提示反馈
+            if (rdoLimitYes.IsChecked == true)
+            {
+                lblStatus.Text = $"已成功将 Chrome 磁盘缓存上限限制为 {txtCacheLimit.Text} GB！";
+                lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113)); // 绿色
+            }
+            else
+            {
+                lblStatus.Text = "已取消缓存容量限制，恢复 Chrome 原生不限容量模式。";
+                lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 73, 94));
+            }
         }
 
         public void TxtCacheLimit_PreviewTextInput(object sender, TextCompositionEventArgs e)
@@ -544,7 +606,15 @@ namespace ChromeUpdaterWPF
 
         public void TxtCacheLimit_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (IsLoaded) ApplyChromeTuningConfig();
+            if (IsLoaded)
+            {
+                ApplyChromeTuningConfig();
+                if (rdoLimitYes.IsChecked == true && double.TryParse(txtCacheLimit.Text, out double gb) && gb > 0)
+                {
+                    lblStatus.Text = $"缓存上限已动态更新限制为 {gb} GB！";
+                    lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113));
+                }
+            }
         }
 
         public void BtnCleanCache_Click(object sender, RoutedEventArgs e)
@@ -717,7 +787,7 @@ namespace ChromeUpdaterWPF
                 rdoShortcutNo.Foreground = defaultText; rdoShortcutNo.FontWeight = FontWeights.Normal;
             }
 
-            // 🌟 5. 禁止写入无用缓存（无论选“是”还是选“否”，选中的高亮加粗变红）
+            // 🌟 5. 禁止写入无用缓存（选中的项目高亮变红加粗）
             if (rdoDisableCacheYes.IsChecked == true)
             {
                 rdoDisableCacheYes.Foreground = activeRed; rdoDisableCacheYes.FontWeight = FontWeights.Bold;
@@ -729,7 +799,7 @@ namespace ChromeUpdaterWPF
                 rdoDisableCacheYes.Foreground = defaultText; rdoDisableCacheYes.FontWeight = FontWeights.Normal;
             }
 
-            // 🌟 6. 缓存上限控制（无论选“限制”还是选“不限”，选中的高亮加粗变红）
+            // 🌟 6. 缓存上限控制（选中的项目高亮变红加粗）
             if (rdoLimitYes.IsChecked == true)
             {
                 rdoLimitYes.Foreground = activeRed; rdoLimitYes.FontWeight = FontWeights.Bold;
