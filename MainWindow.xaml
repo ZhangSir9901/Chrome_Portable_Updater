@@ -52,12 +52,12 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 🌟 新增：无用缓存写入拦截 -->
+                        <!-- 🌟 调整：默认选择“否” -->
                         <TextBlock Text="禁止写入无用缓存 (GPU/崩溃日志)" Foreground="#7F8C8D" Margin="5,12,0,5"/>
                         <Border x:Name="borderDisableCache" Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,10">
                             <StackPanel Orientation="Horizontal">
-                                <RadioButton x:Name="rdoDisableCacheYes" Content="是 (推荐)" GroupName="NoCache" Margin="0,0,20,0" IsChecked="True" Click="RdoDisableCache_Click"/>
-                                <RadioButton x:Name="rdoDisableCacheNo" Content="否" GroupName="NoCache" Click="RdoDisableCache_Click"/>
+                                <RadioButton x:Name="rdoDisableCacheYes" Content="是 (推荐)" GroupName="NoCache" Margin="0,0,20,0" Click="RdoDisableCache_Click"/>
+                                <RadioButton x:Name="rdoDisableCacheNo" Content="否" GroupName="NoCache" IsChecked="True" Click="RdoDisableCache_Click"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -82,7 +82,7 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 🌟 新增：缓存上限与清理功能块 -->
+                        <!-- 🌟 调整：默认选择“不限”，输入框默认关 -->
                         <TextBlock Text="缓存上限控制与清理" Foreground="#7F8C8D" Margin="5,12,0,5"/>
                         <Border x:Name="borderCacheLimit" Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="10,6">
                             <Grid>
@@ -93,10 +93,10 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <RadioButton x:Name="rdoLimitYes" Grid.Column="0" Content="限制" GroupName="Limit" VerticalAlignment="Center" IsChecked="True" Click="RdoLimit_Click"/>
-                                <TextBox x:Name="txtCacheLimit" Grid.Column="1" Text="2" Width="30" Height="22" TextAlignment="Center" VerticalContentAlignment="Center" FontSize="13" Margin="2,0,0,0" PreviewTextInput="TxtCacheLimit_PreviewTextInput" TextChanged="TxtCacheLimit_TextChanged"/>
+                                <RadioButton x:Name="rdoLimitYes" Grid.Column="0" Content="限制" GroupName="Limit" VerticalAlignment="Center" Click="RdoLimit_Click"/>
+                                <TextBox x:Name="txtCacheLimit" Grid.Column="1" Text="2" Width="30" Height="22" TextAlignment="Center" VerticalContentAlignment="Center" FontSize="13" Margin="2,0,0,0" IsEnabled="False" PreviewTextInput="TxtCacheLimit_PreviewTextInput" TextChanged="TxtCacheLimit_TextChanged"/>
                                 <TextBlock Grid.Column="2" Text="GB" Foreground="#34495E" VerticalAlignment="Center" Margin="2,0,8,0" FontSize="13"/>
-                                <RadioButton x:Name="rdoLimitNo" Grid.Column="3" Content="不限" GroupName="Limit" VerticalAlignment="Center" Margin="0,0,8,0" Click="RdoLimit_Click"/>
+                                <RadioButton x:Name="rdoLimitNo" Grid.Column="3" Content="不限" GroupName="Limit" VerticalAlignment="Center" Margin="0,0,8,0" IsChecked="True" Click="RdoLimit_Click"/>
                                 <Button x:Name="btnCleanCache" Grid.Column="4" Content="🧹 清理" Background="#8E44AD" Foreground="White" FontSize="12" BorderThickness="0" Height="26" Cursor="Hand" Click="BtnCleanCache_Click">
                                     <Button.Resources>
                                         <Style TargetType="Border">
@@ -124,7 +124,7 @@
                     <Button x:Name="btnExit"   Grid.Column="3" Content="退出程序" Margin="5,0,0,0" Height="42" Background="#E74C3C" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnClose_Click"/>
                 </Grid>
 
-                <!-- 🌟 升级后的底部两行排版：技术支持 + 动态版本自更新提示 -->
+                <!-- 底部两行排版：技术支持 + 动态版本自更新提示 -->
                 <StackPanel Orientation="Vertical" HorizontalAlignment="Center" Margin="0,10,0,0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <TextBlock Text="技术支持: " Foreground="#95A5A6" VerticalAlignment="Center"/>

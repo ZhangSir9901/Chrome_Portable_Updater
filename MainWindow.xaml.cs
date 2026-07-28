@@ -286,7 +286,7 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
-        // 🌟 新增：写组策略控制缓存上限与崩溃日志
+        // 🌟 写组策略控制缓存上限与崩溃日志（包含“否”与“不限”的解封删除逻辑）
         private void ApplyCacheGroupPolicy()
         {
             try
@@ -302,6 +302,7 @@ namespace ChromeUpdaterWPF
                         }
                         else
                         {
+                            // 点击“否”时解封：删除组策略项
                             try { key.DeleteValue("MetricsReportingEnabled"); } catch { }
                         }
 
@@ -309,12 +310,12 @@ namespace ChromeUpdaterWPF
                         if (rdoLimitYes.IsChecked == true && double.TryParse(txtCacheLimit.Text, out double gb) && gb > 0)
                         {
                             long bytes = (long)(gb * 1024 * 1024 * 1024);
-                            // Chrome 支持 DWORD 限制，若大于 4GB 则打折或者限制在 4GB 以内
                             if (bytes > int.MaxValue) bytes = int.MaxValue;
                             key.SetValue("DiskCacheSize", (int)bytes, Microsoft.Win32.RegistryValueKind.DWord);
                         }
                         else
                         {
+                            // 点击“不限”时解封：删除 DiskCacheSize 限制
                             try { key.DeleteValue("DiskCacheSize"); } catch { }
                         }
                     }
@@ -323,7 +324,7 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
-        // 🌟 新增：物理锁定 GPU/着色器无用缓存目录
+        // 🌟 物理锁定 GPU/着色器无用缓存目录（支持“否”解封）
         private void LockDisposableCachesIfEnabled(string uDir)
         {
             string[] disposableFolders = { "GPUCache", "ShaderCache", "GrShaderCache", "GraphiteDawnCache", "Crashpad" };
@@ -343,7 +344,7 @@ namespace ChromeUpdaterWPF
                     }
                     else
                     {
-                        // 如果用户取消禁写，解除物理文件锁
+                        // 点击“否”时解封：取消只读属性并删除占位文件，恢复 Chrome 正常写入
                         if (File.Exists(targetPath))
                         {
                             File.SetAttributes(targetPath, FileAttributes.Normal);
@@ -357,7 +358,7 @@ namespace ChromeUpdaterWPF
 
         private void ApplyChromeTuningConfig()
         {
-            // 🌟 1. 注入 HKCU 组策略防线（AI 防御 + 缓存控制）
+            // 1. 注入 HKCU 组策略防线
             ApplyAiGroupPolicy();
             ApplyCacheGroupPolicy();
 
@@ -401,7 +402,7 @@ namespace ChromeUpdaterWPF
                     prefContent = InjectPreferences(prefContent);
                     File.WriteAllText(prefPath, prefContent);
 
-                    // 🌟 2. 自动加装物理占位锁
+                    // 2. 自动加装/解除物理占位锁
                     LockAiDirectoryIfClean(uDir);
                     LockDisposableCachesIfEnabled(uDir);
                 }
@@ -522,29 +523,22 @@ namespace ChromeUpdaterWPF
             return json;
         }
 
-        // ================== 🌟 缓存控件交互事件事件响应 ==================
+        // ================== 🌟 缓存控件交互与动态样式刷新 ==================
         public void RdoDisableCache_Click(object sender, RoutedEventArgs e)
         {
             ApplyChromeTuningConfig();
+            UpdateBorderStyles(Directory.Exists(portableDir) && File.Exists(chromeExe), IsPortableChromeDefault(), ShortcutsExistOnDesktop());
         }
 
         public void RdoLimit_Click(object sender, RoutedEventArgs e)
         {
-            if (rdoLimitYes.IsChecked == true)
-            {
-                borderCacheLimit.IsEnabled = true;
-                txtCacheLimit.IsEnabled = true;
-            }
-            else
-            {
-                txtCacheLimit.IsEnabled = false;
-            }
+            txtCacheLimit.IsEnabled = (rdoLimitYes.IsChecked == true);
             ApplyChromeTuningConfig();
+            UpdateBorderStyles(Directory.Exists(portableDir) && File.Exists(chromeExe), IsPortableChromeDefault(), ShortcutsExistOnDesktop());
         }
 
         public void TxtCacheLimit_PreviewTextInput(object sender, TextCompositionEventArgs e)
         {
-            // 限制输入框只能输入数字和小数点
             e.Handled = !Regex.IsMatch(e.Text, @"[\d\.]");
         }
 
@@ -553,7 +547,6 @@ namespace ChromeUpdaterWPF
             if (IsLoaded) ApplyChromeTuningConfig();
         }
 
-        // 🌟 新增：手动一键清理无用缓存事件
         public void BtnCleanCache_Click(object sender, RoutedEventArgs e)
         {
             var targetUserDirs = new List<string> { userDataDir };
@@ -567,7 +560,6 @@ namespace ChromeUpdaterWPF
             long freedBytes = 0;
             int cleanedCount = 0;
 
-            // 可以安全彻底清空的垃圾缓存相对路径列表 (不会影响 Cookies/密码/历史/书签)
             string[] relativeCachePaths = {
                 @"Default\Cache",
                 @"Default\Code Cache",
@@ -604,7 +596,6 @@ namespace ChromeUpdaterWPF
                 }
             }
 
-            // 同步应用一次环境限制与文件锁
             ApplyChromeTuningConfig();
 
             double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2);
@@ -612,7 +603,6 @@ namespace ChromeUpdaterWPF
 
             MessageBox.Show($"【缓存清理完成】\n\n成功扫描并彻底清空了 {cleanedCount} 个无用临时缓存目录！\n共为您释放了磁盘空间: {freedText}\n\n已成功保留您的全部密码、Cookies、网页历史与书签数据！", "清理成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        // ================== 结束 ==================
 
         public void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) { this.DragMove(); }
         public void BtnMinimize_Click(object sender, RoutedEventArgs e) { this.WindowState = WindowState.Minimized; }
@@ -646,11 +636,13 @@ namespace ChromeUpdaterWPF
             }
         }
 
+        // 🌟 统一对齐与变红加粗渲染引擎
         private void UpdateBorderStyles(bool chromeExists, bool isDefault, bool shortcutsExist)
         {
-            var activeRed = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(231, 76, 60));
-            var defaultText = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 73, 94));
+            var activeRed = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(231, 76, 60)); // #E74C3C 红色
+            var defaultText = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 73, 94)); // 默认灰色
 
+            // 1. 系统架构
             if (rdo64.IsChecked == true)
             {
                 rdo64.Foreground = activeRed; rdo64.FontWeight = FontWeights.Bold;
@@ -662,6 +654,7 @@ namespace ChromeUpdaterWPF
                 rdo64.Foreground = defaultText; rdo64.FontWeight = FontWeights.Normal;
             }
 
+            // 下拉菜单项
             for (int i = 0; i < cmbChannel.Items.Count; i++)
             {
                 if (cmbChannel.Items[i] is ComboBoxItem item)
@@ -722,6 +715,30 @@ namespace ChromeUpdaterWPF
                 rdoShortcutNo.IsChecked = true;
                 rdoShortcutYes.Foreground = defaultText; rdoShortcutYes.FontWeight = FontWeights.Normal;
                 rdoShortcutNo.Foreground = defaultText; rdoShortcutNo.FontWeight = FontWeights.Normal;
+            }
+
+            // 🌟 5. 禁止写入无用缓存（无论选“是”还是选“否”，选中的高亮加粗变红）
+            if (rdoDisableCacheYes.IsChecked == true)
+            {
+                rdoDisableCacheYes.Foreground = activeRed; rdoDisableCacheYes.FontWeight = FontWeights.Bold;
+                rdoDisableCacheNo.Foreground = defaultText; rdoDisableCacheNo.FontWeight = FontWeights.Normal;
+            }
+            else
+            {
+                rdoDisableCacheNo.Foreground = activeRed; rdoDisableCacheNo.FontWeight = FontWeights.Bold;
+                rdoDisableCacheYes.Foreground = defaultText; rdoDisableCacheYes.FontWeight = FontWeights.Normal;
+            }
+
+            // 🌟 6. 缓存上限控制（无论选“限制”还是选“不限”，选中的高亮加粗变红）
+            if (rdoLimitYes.IsChecked == true)
+            {
+                rdoLimitYes.Foreground = activeRed; rdoLimitYes.FontWeight = FontWeights.Bold;
+                rdoLimitNo.Foreground = defaultText; rdoLimitNo.FontWeight = FontWeights.Normal;
+            }
+            else
+            {
+                rdoLimitNo.Foreground = activeRed; rdoLimitNo.FontWeight = FontWeights.Bold;
+                rdoLimitYes.Foreground = defaultText; rdoLimitYes.FontWeight = FontWeights.Normal;
             }
         }
 
