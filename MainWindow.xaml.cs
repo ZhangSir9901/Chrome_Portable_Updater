@@ -915,14 +915,18 @@ namespace ChromeUpdaterWPF
                     Type t = Type.GetTypeFromProgID("WScript.Shell");
                     dynamic shell = Activator.CreateInstance(t);
 
+                    // 🌟 核心修复 4：同步纯净绝对路径
+                    string dataPath = Path.GetFullPath(userDataDir).TrimEnd('\\', '/');
+
                     dynamic sPortable = shell.CreateShortcut(shortcutPortable);
-                    sPortable.TargetPath = chromeExe;
-                    sPortable.Arguments = $"--user-data-dir=\"{userDataDir}\" --no-first-run";
+                    sPortable.TargetPath = Path.GetFullPath(chromeExe);
+                    // 🌟 剥离 --no-first-run 等多余参数，保证快捷方式和注册表唤醒参数【绝对一致】！
+                    sPortable.Arguments = $"--user-data-dir=\"{dataPath}\"";
                     sPortable.WorkingDirectory = Path.GetDirectoryName(chromeExe);
                     sPortable.Save();
 
                     dynamic sNormal = shell.CreateShortcut(shortcutNormal);
-                    sNormal.TargetPath = chromeExe;
+                    sNormal.TargetPath = Path.GetFullPath(chromeExe);
                     sNormal.Arguments = "";
                     sNormal.WorkingDirectory = Path.GetDirectoryName(chromeExe);
                     sNormal.Save();
@@ -1325,16 +1329,16 @@ namespace ChromeUpdaterWPF
 
         private void RunProcess(string exe, string args) { Process p = new Process { StartInfo = { FileName = exe, Arguments = args, CreateNoWindow = true, UseShellExecute = false } }; p.Start(); p.WaitForExit(); }
 
-        // ================= 阶段一：给便携版上“系统户口” (官方夺舍版) =================
-        // ================= 阶段一：给便携版上“系统户口” (清晰独立命名版) =================
+        // ================= 阶段一：给便携版上“系统户口” (纯净独立版，修复 IPC 新窗口 Bug) =================
         private void RegisterPortableChrome()
         {
             try
             {
-                string exePath = chromeExe;
+                // 🌟 核心修复 1：严格规范化绝对路径并去除尾部斜杠，确保 Chrome 的 IPC 通信管道绝对匹配
+                string exePath = Path.GetFullPath(chromeExe);
+                string dataPath = Path.GetFullPath(userDataDir).TrimEnd('\\', '/');
                 string iconPath = $"{exePath},0";
 
-                // 🌟 恢复独立命名！这样就能在列表里清晰地区分“系统自带”和“便携版”了
                 string progId = "ChromeHTML.Portable";
                 string clientName = "ChromePortable";
                 string appName = "Google Chrome 便携版";
@@ -1342,45 +1346,25 @@ namespace ChromeUpdaterWPF
 
                 using (var key = Microsoft.Win32.Registry.CurrentUser)
                 {
-                    // ==========================================
-                    // 🧹 智能擦除：清理上次“夺舍”写入的同名配置，防止污染你的系统原生 Chrome
-                    // ==========================================
-                    try
-                    {
-                        using (var checkKey = key.OpenSubKey(@"Software\Classes\ChromeHTML\shell\open\command"))
-                        {
-                            // 仅当确认是我们便携版写入的配置时，才予以清除，绝不误伤原生配置
-                            if (checkKey != null && checkKey.GetValue("")?.ToString().Contains("--user-data-dir") == true)
-                            {
-                                key.DeleteSubKeyTree(@"Software\Classes\ChromeHTML", false);
-                            }
-                        }
-                        using (var checkKey2 = key.OpenSubKey(@"Software\Clients\StartMenuInternet\Google Chrome\shell\open\command"))
-                        {
-                            if (checkKey2 != null && checkKey2.GetValue("")?.ToString().Contains("--user-data-dir") == true)
-                            {
-                                key.DeleteSubKeyTree(@"Software\Clients\StartMenuInternet\Google Chrome", false);
-                            }
-                        }
-                    }
-                    catch { }
-
-                    // ==========================================
-                    // 🚀 正式注册：带有 URL Protocol 完美通关文牒的便携版
-                    // ==========================================
+                    // 清理旧痕迹
+                    try { key.DeleteSubKeyTree(@"Software\Classes\ChromeHTML.Portable", false); } catch { }
+                    try { key.DeleteSubKeyTree($@"Software\Clients\StartMenuInternet\{clientName}", false); } catch { }
 
                     // 1. 注册专属 ProgID
                     using (var progIdKey = key.CreateSubKey($@"Software\Classes\{progId}"))
                     {
                         progIdKey.SetValue("", appName);
+                        progIdKey.SetValue("URL Protocol", ""); // 必须保留，否则在 Win10/11 设置面板点击无效
 
-                        // 🌟 Win10/11 强校验通行证：有了这行，叫什么名字都能瞬间设置成功！
-                        progIdKey.SetValue("URL Protocol", "");
-                        progIdKey.SetValue("AppUserModelId", "Google.Chrome.Portable");
+                        // 🌟 核心修复 2：彻底删除了 AppUserModelId，解除系统的应用沙盒隔离！
 
                         using (var icon = progIdKey.CreateSubKey("DefaultIcon")) icon.SetValue("", iconPath);
                         using (var cmd = progIdKey.CreateSubKey(@"shell\open\command"))
-                            cmd.SetValue("", $"\"{exePath}\" --user-data-dir=\"{userDataDir}\" --single-argument %1");
+                        {
+                            // 🌟 核心修复 3：使用 "%1" 替代 --single-argument，并强行将 DelegateExecute 设为空，彻底阻断系统原生 Chrome 的 COM 对象干扰
+                            cmd.SetValue("", $"\"{exePath}\" --user-data-dir=\"{dataPath}\" \"%1\"");
+                            cmd.SetValue("DelegateExecute", "");
+                        }
 
                         using (var appKey = progIdKey.CreateSubKey("Application"))
                         {
@@ -1397,7 +1381,9 @@ namespace ChromeUpdaterWPF
                         clientKey.SetValue("", appName);
                         using (var icon = clientKey.CreateSubKey("DefaultIcon")) icon.SetValue("", iconPath);
                         using (var cmd = clientKey.CreateSubKey(@"shell\open\command"))
-                            cmd.SetValue("", $"\"{exePath}\" --user-data-dir=\"{userDataDir}\"");
+                        {
+                            cmd.SetValue("", $"\"{exePath}\" --user-data-dir=\"{dataPath}\"");
+                        }
 
                         using (var capKey = clientKey.CreateSubKey("Capabilities"))
                         {
@@ -1436,7 +1422,10 @@ namespace ChromeUpdaterWPF
         {
             try
             {
-                string exePath = chromeExe;
+                // 🌟 同步严谨路径格式
+                string exePath = Path.GetFullPath(chromeExe);
+                string dataPath = Path.GetFullPath(userDataDir).TrimEnd('\\', '/');
+
                 using (var key = Microsoft.Win32.Registry.CurrentUser)
                 {
                     string[] protocols = { "http", "https" };
@@ -1444,7 +1433,8 @@ namespace ChromeUpdaterWPF
                     {
                         using (var cmdKey = key.CreateSubKey($@"Software\Classes\{p}\shell\open\command"))
                         {
-                            cmdKey.SetValue("", $"\"{exePath}\" --user-data-dir=\"{userDataDir}\" --single-argument %1");
+                            cmdKey.SetValue("", $"\"{exePath}\" --user-data-dir=\"{dataPath}\" \"%1\"");
+                            cmdKey.SetValue("DelegateExecute", ""); // 强行清空 COM 干扰
                         }
                     }
                 }
