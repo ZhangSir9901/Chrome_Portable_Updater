@@ -662,7 +662,7 @@ namespace ChromeUpdaterWPF
         private bool ShortcutsExistOnDesktop()
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            return File.Exists(Path.Combine(desktop, "Chrome 便携版.lnk")) || File.Exists(Path.Combine(desktop, "Chrome 浏览器.lnk"));
+            return File.Exists(Path.Combine(desktop, "Chrome 便携版.lnk"));
         }
 
         private bool IsPortableChromeDefault()
@@ -699,6 +699,13 @@ namespace ChromeUpdaterWPF
                 string shortcutPortable = Path.Combine(desktop, "Chrome 便携版.lnk");
                 string shortcutNormal = Path.Combine(desktop, "Chrome 浏览器.lnk");
 
+                // 1. 无论如何，先物理删除旧的“Chrome 浏览器.lnk”，不再保留双快捷方式
+                if (File.Exists(shortcutNormal))
+                {
+                    try { File.Delete(shortcutNormal); } catch { }
+                }
+
+                // 2. 仅在勾选时生成唯一的“Chrome 便携版.lnk”
                 if (rdoShortcutYes.IsChecked == true)
                 {
                     Type t = Type.GetTypeFromProgID("WScript.Shell");
@@ -706,28 +713,22 @@ namespace ChromeUpdaterWPF
 
                     string exePath = GetNormalizedPath(chromeExe);
                     string dataPath = GetNormalizedPath(userDataDir);
-                    string localDataPath = GetNormalizedPath(GetLocalUserDataDir());
 
                     dynamic sPortable = shell.CreateShortcut(shortcutPortable);
                     sPortable.TargetPath = exePath;
                     sPortable.Arguments = $"--user-data-dir=\"{dataPath}\"";
                     sPortable.WorkingDirectory = Path.GetDirectoryName(exePath);
                     sPortable.Save();
-
-                    // 🌟 关键：原生快捷方式显式传入本地 C 盘 UserData，命令行参数会直接覆盖组策略，保证本地模式不受影响！
-                    dynamic sNormal = shell.CreateShortcut(shortcutNormal);
-                    sNormal.TargetPath = exePath;
-                    sNormal.Arguments = $"--user-data-dir=\"{localDataPath}\"";
-                    sNormal.WorkingDirectory = Path.GetDirectoryName(exePath);
-                    sNormal.Save();
                 }
                 else
                 {
                     if (File.Exists(shortcutPortable)) File.Delete(shortcutPortable);
-                    if (File.Exists(shortcutNormal)) File.Delete(shortcutNormal);
                 }
             }
-            catch (Exception ex) { Console.WriteLine($"更新快捷方式失败: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新快捷方式失败: {ex.Message}");
+            }
         }
 
         // ================== 🌟 系统注册表核心 (清空旧选项 + 完美 IPC) ==================
