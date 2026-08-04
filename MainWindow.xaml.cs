@@ -1325,21 +1325,51 @@ namespace ChromeUpdaterWPF
 
         private void RunProcess(string exe, string args) { Process p = new Process { StartInfo = { FileName = exe, Arguments = args, CreateNoWindow = true, UseShellExecute = false } }; p.Start(); p.WaitForExit(); }
 
+        // ================= 阶段一：给便携版上“系统户口” (官方夺舍版) =================
         private void RegisterPortableChrome()
         {
             try
             {
                 string exePath = chromeExe;
                 string iconPath = $"{exePath},0";
-                string progId = "ChromeHTML.Portable";
-                string appName = "Google Chrome 便携版";
-                string appDesc = "智能且快速的便携式 Web 浏览器";
+
+                // 🌟 新策略：直接“夺舍”官方原生 Chrome 的注册表名，让系统设置里只显示一个清爽的官方名字！
+                string progId = "ChromeHTML";
+                string clientName = "Google Chrome";
+                string appName = "Google Chrome";
+                string appDesc = "Google Chrome";
 
                 using (var key = Microsoft.Win32.Registry.CurrentUser)
                 {
+                    // ==========================================
+                    // 🧹 新增：自动检测并清除以前版本写入的“便携版”绿框旧残留
+                    // ==========================================
+                    try { key.DeleteSubKeyTree(@"Software\Classes\ChromeHTML.Portable", false); } catch { }
+                    try { key.DeleteSubKeyTree(@"Software\Clients\StartMenuInternet\ChromePortable", false); } catch { }
+                    try
+                    {
+                        using (var regAppsKey = key.OpenSubKey(@"Software\RegisteredApplications", true))
+                        {
+                            if (regAppsKey != null && regAppsKey.GetValue("ChromePortable") != null)
+                            {
+                                regAppsKey.DeleteValue("ChromePortable");
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // ==========================================
+                    // 🚀 执行全新的官方原位覆盖（夺舍）注入
+                    // ==========================================
+
+                    // 1. 接管专属 ProgID
                     using (var progIdKey = key.CreateSubKey($@"Software\Classes\{progId}"))
                     {
                         progIdKey.SetValue("", appName);
+
+                        // 🌟 Win10/11 强防拒校验补丁：必须带这行，否则点击设置时会被系统静默拦截！
+                        progIdKey.SetValue("URL Protocol", "");
+
                         using (var icon = progIdKey.CreateSubKey("DefaultIcon")) icon.SetValue("", iconPath);
                         using (var cmd = progIdKey.CreateSubKey(@"shell\open\command"))
                             cmd.SetValue("", $"\"{exePath}\" --user-data-dir=\"{userDataDir}\" --single-argument %1");
@@ -1353,7 +1383,8 @@ namespace ChromeUpdaterWPF
                         }
                     }
 
-                    using (var clientKey = key.CreateSubKey(@"Software\Clients\StartMenuInternet\ChromePortable"))
+                    // 2. 接管“开始菜单”和默认客户端注册表
+                    using (var clientKey = key.CreateSubKey($@"Software\Clients\StartMenuInternet\{clientName}"))
                     {
                         clientKey.SetValue("", appName);
                         using (var icon = clientKey.CreateSubKey("DefaultIcon")) icon.SetValue("", iconPath);
@@ -1383,9 +1414,10 @@ namespace ChromeUpdaterWPF
                         }
                     }
 
+                    // 3. 彻底覆盖 Windows 默认应用设置面板指向
                     using (var regAppsKey = key.CreateSubKey(@"Software\RegisteredApplications"))
                     {
-                        regAppsKey.SetValue("ChromePortable", @"Software\Clients\StartMenuInternet\ChromePortable\Capabilities");
+                        regAppsKey.SetValue(clientName, $@"Software\Clients\StartMenuInternet\{clientName}\Capabilities");
                     }
                 }
             }
