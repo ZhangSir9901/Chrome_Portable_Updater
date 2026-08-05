@@ -17,10 +17,9 @@ namespace ChromeUpdaterWPF
         private readonly string portableDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Chrome_Portable");
         private readonly string chromeExe;
         private readonly string userDataDir;
+        private readonly string configFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "optimizer_config.json");
 
-        // 🌟 反射核心：读取 AssemblyInfo.cs 里的“产品信息版本”
         private static readonly string APP_VERSION = System.Diagnostics.FileVersionInfo.GetVersionInfo(System.Reflection.Assembly.GetExecutingAssembly().Location).ProductVersion;
-
         private readonly string poemText = "巴女浅醉黄鹤楼，\n江风吹皱美人绸。\n此别经年何时了，\n云锁巫山夜未犹。\n\n";
 
         public MainWindow()
@@ -28,7 +27,6 @@ namespace ChromeUpdaterWPF
             InitializeComponent();
             chromeExe = Path.Combine(portableDir, "Chrome", "chrome.exe");
             userDataDir = Path.Combine(portableDir, "UserData");
-
             Loaded += MainWindow_Loaded;
         }
 
@@ -44,34 +42,231 @@ namespace ChromeUpdaterWPF
 
             lblAppVersion.Text = $"当前升级器版本: {APP_VERSION}";
 
+            if (Process.GetProcessesByName("chrome").Length == 0)
+            {
+                PerformSilentCacheClean();
+            }
+
+            EnsureOptimizerConfig();
             LoadAndApplySavedCacheSettings();
             _ = CheckSelfUpdateAsync();
             await CheckAndDisplayVersionAsync();
             UpdateAiButtonStatus();
         }
 
-        // 🌟 路径归一化主方法
         private string GetNormalizedPath(string path)
         {
             if (string.IsNullOrEmpty(path)) return path;
-            try
-            {
-                // 获取绝对路径、转换为小写并清除末尾斜杠，确保 IPC 哈希 100% 匹配
-                return Path.GetFullPath(path).ToLowerInvariant().TrimEnd('\\', '/');
-            }
-            catch
-            {
-                return path.ToLowerInvariant().TrimEnd('\\', '/');
-            }
+            try { return Path.GetFullPath(path).ToLowerInvariant().TrimEnd('\\', '/'); }
+            catch { return path.ToLowerInvariant().TrimEnd('\\', '/'); }
         }
 
-        // 🌟 别名方法：同时兼容 GetExactCanonicalPath 调用，消除所有 CS0103 报错
         private string GetExactCanonicalPath(string path)
         {
             return GetNormalizedPath(path);
         }
 
-        // ================== 🌟 缓存设置状态回显 ==================
+        // ================== 🌟 配置文件引擎外置核心 ==================
+        private void EnsureOptimizerConfig()
+        {
+            if (File.Exists(configFilePath)) return;
+
+            string json = @"{
+  ""_Description"": ""Chrome 便携版智能升级器 - 核心优化驱动规则库 (引擎外置化)"",
+  ""_Notice"": ""修改此文件后，系统会自动读取并接管底层注入。0=关闭，1=开启，2=禁用"",
+
+  ""Policies"": {
+    ""_组1"": ""--- 性能榨取与系统资源控制 ---"",
+    ""BackgroundModeEnabled"": 0,
+    ""HighEfficiencyModeEnabled"": 1,
+    ""BatterySaverModeState"": 1,
+    ""SpellcheckEnabled"": 0,
+
+    ""_组2"": ""--- AI 大模型与臃肿服务封杀 ---"",
+    ""GenAiDefaultSettings"": 1,
+    ""GenAILocalFoundationalModelSettings"": 1,
+    ""OptimizationGuideModelDownloading"": 0,
+    ""HelpMeWriteSettings"": 2,
+    ""TabOrganizerSettings"": 2,
+
+    ""_组3"": ""--- 遥测、隐私与网络安全 ---"",
+    ""ComponentUpdatesEnabled"": 0,
+    ""NetworkPredictionOptions"": 2,
+    ""HttpsOnlyMode"": ""disallowed"",
+
+    ""_组4"": ""--- UI 纯净与臃肿功能剥离 ---"",
+    ""PromotionalTabsEnabled"": 0,
+    ""ShoppingListEnabled"": 0,
+    ""ShowAppsShortcutInBookmarkBar"": 0
+  },
+
+  ""Flags"": [
+    ""optimization-guide-on-device-model@2"",
+    ""prompt-api-for-gemini-nano@2"",
+    ""ai-mode-omnibox-entrypoint@2"",
+    ""glic@2"",
+    ""summarization-api-for-gemini-nano@2"",
+    ""compose@2"",
+    ""enable-parallel-downloading@1"",
+    ""hardware-media-key-handling@2"",
+    ""smooth-scrolling@1"",
+    ""enable-gpu-rasterization@1"",
+    ""lens-overlay-optimization-filter@2"",
+    ""omnibox-contextual-suggestions@2""
+  ],
+
+  ""Preferences"": {
+    ""_说明"": ""格式为 '父节点|子节点' : 设定值 (支持嵌套JSON字符串)"",
+    ""session|restore_on_startup"": 1,
+    ""performance_tuning|high_efficiency_mode"": {""state"":1,""mode"":1},
+    ""performance_tuning|battery_saver_mode"": {""state"":1}
+  }
+}";
+            try { File.WriteAllText(configFilePath, json, System.Text.Encoding.UTF8); } catch { }
+        }
+
+        private int GetPolicyValueInt(string json, string key, int defaultVal)
+        {
+            Match m = Regex.Match(json, $@"""{key}""\s*:\s*(\d+)");
+            if (m.Success && int.TryParse(m.Groups[1].Value, out int val))
+                return val;
+            return defaultVal;
+        }
+
+        private string GetPolicyValueString(string json, string key, string defaultVal)
+        {
+            Match m = Regex.Match(json, $@"""{key}""\s*:\s*""([^""]*)""");
+            if (m.Success)
+                return m.Groups[1].Value;
+            return defaultVal;
+        }
+
+        private string SetPolicyValueInt(string json, string key, int value)
+        {
+            if (Regex.IsMatch(json, $@"""{key}""\s*:\s*\d+"))
+                return Regex.Replace(json, $@"""{key}""\s*:\s*\d+", $@"""{key}"": {value}");
+
+            Match pMatch = Regex.Match(json, @"""Policies""\s*:\s*\{");
+            if (pMatch.Success)
+                return json.Insert(pMatch.Index + pMatch.Length, $"\n    \"{key}\": {value},");
+
+            return json;
+        }
+
+        private string SetPolicyValueString(string json, string key, string value)
+        {
+            if (Regex.IsMatch(json, $@"""{key}""\s*:\s*""[^""]*"""))
+                return Regex.Replace(json, $@"""{key}""\s*:\s*""[^""]*""", $@"""{key}"": ""{value}""");
+
+            Match pMatch = Regex.Match(json, @"""Policies""\s*:\s*\{");
+            if (pMatch.Success)
+                return json.Insert(pMatch.Index + pMatch.Length, $"\n    \"{key}\": \"{value}\",");
+
+            return json;
+        }
+
+        // 🌟 互斥切换到高级设置界面，并自动读取 JSON 赋值给 UI
+        private void BtnSettings_Click(object sender, RoutedEventArgs e)
+        {
+            MainContentPanel.Visibility = Visibility.Collapsed;
+            SettingsContentPanel.Visibility = Visibility.Visible;
+
+            string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+
+            chkHighEfficiency.IsChecked = GetPolicyValueInt(json, "HighEfficiencyModeEnabled", 1) == 1;
+            chkBatterySaver.IsChecked = GetPolicyValueInt(json, "BatterySaverModeState", 1) == 1;
+            chkDisableBgMode.IsChecked = GetPolicyValueInt(json, "BackgroundModeEnabled", 0) == 0;
+            chkDisableSpellcheck.IsChecked = GetPolicyValueInt(json, "SpellcheckEnabled", 0) == 0;
+
+            chkDisableGenAI.IsChecked = GetPolicyValueInt(json, "GenAiDefaultSettings", 1) == 1;
+            chkDisableLocalModel.IsChecked = GetPolicyValueInt(json, "GenAILocalFoundationalModelSettings", 1) == 1;
+
+            chkDisableCompUpdate.IsChecked = GetPolicyValueInt(json, "ComponentUpdatesEnabled", 0) == 0;
+            chkDisablePrediction.IsChecked = GetPolicyValueInt(json, "NetworkPredictionOptions", 2) == 2;
+            chkDisableHttpsOnly.IsChecked = GetPolicyValueString(json, "HttpsOnlyMode", "disallowed") == "disallowed";
+
+            chkDisablePromotions.IsChecked = GetPolicyValueInt(json, "PromotionalTabsEnabled", 0) == 0;
+            chkDisableShopping.IsChecked = GetPolicyValueInt(json, "ShoppingListEnabled", 0) == 0;
+        }
+
+        // 🌟 将 UI 开关状态写回 JSON 并立即强制注入底层
+        private void BtnSaveSettings_Click(object sender, RoutedEventArgs e)
+        {
+            string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+
+            json = SetPolicyValueInt(json, "HighEfficiencyModeEnabled", chkHighEfficiency.IsChecked == true ? 1 : 0);
+            json = SetPolicyValueInt(json, "BatterySaverModeState", chkBatterySaver.IsChecked == true ? 1 : 0);
+            json = SetPolicyValueInt(json, "BackgroundModeEnabled", chkDisableBgMode.IsChecked == true ? 0 : 1);
+            json = SetPolicyValueInt(json, "SpellcheckEnabled", chkDisableSpellcheck.IsChecked == true ? 0 : 1);
+
+            json = SetPolicyValueInt(json, "GenAiDefaultSettings", chkDisableGenAI.IsChecked == true ? 1 : 0);
+            json = SetPolicyValueInt(json, "GenAILocalFoundationalModelSettings", chkDisableLocalModel.IsChecked == true ? 1 : 0);
+
+            json = SetPolicyValueInt(json, "ComponentUpdatesEnabled", chkDisableCompUpdate.IsChecked == true ? 0 : 1);
+            json = SetPolicyValueInt(json, "NetworkPredictionOptions", chkDisablePrediction.IsChecked == true ? 2 : 0);
+            json = SetPolicyValueString(json, "HttpsOnlyMode", chkDisableHttpsOnly.IsChecked == true ? "disallowed" : "default");
+
+            json = SetPolicyValueInt(json, "PromotionalTabsEnabled", chkDisablePromotions.IsChecked == true ? 0 : 1);
+            json = SetPolicyValueInt(json, "ShoppingListEnabled", chkDisableShopping.IsChecked == true ? 0 : 1);
+
+            try
+            {
+                File.WriteAllText(configFilePath, json, System.Text.Encoding.UTF8);
+                ApplyChromeTuningConfig();
+                MessageBox.Show("极客优化参数已成功保存！并已自动写入系统底层组策略拦截规则。\n重启浏览器后即可完美生效。", "应用成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex) { MessageBox.Show($"保存配置文件失败: {ex.Message}"); }
+
+            SettingsContentPanel.Visibility = Visibility.Collapsed;
+            MainContentPanel.Visibility = Visibility.Visible;
+        }
+
+        private void BtnCancelSettings_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsContentPanel.Visibility = Visibility.Collapsed;
+            MainContentPanel.Visibility = Visibility.Visible;
+        }
+
+        // ================== 🌟 缓存清理与自更新 ==================
+        private (long freedBytes, int cleanedCount) PerformSilentCacheClean()
+        {
+            var targetUserDirs = new List<string> { userDataDir };
+            try
+            {
+                string localPath = GetLocalUserDataDir();
+                if (!string.IsNullOrEmpty(localPath)) targetUserDirs.Add(localPath);
+            }
+            catch { }
+
+            long fBytes = 0; int cCount = 0;
+            string[] relativeCachePaths = {
+                @"Default\Cache", @"Default\Code Cache", @"Default\GPUCache", @"Default\Media Cache",
+                @"GPUCache", @"ShaderCache", @"GrShaderCache", @"GraphiteDawnCache", @"Crashpad", @"BrowserMetrics"
+            };
+
+            foreach (var uDir in targetUserDirs)
+            {
+                foreach (var relPath in relativeCachePaths)
+                {
+                    try
+                    {
+                        string fullPath = Path.Combine(uDir, relPath);
+                        if (Directory.Exists(fullPath))
+                        {
+                            foreach (var f in Directory.GetFiles(fullPath, "*", SearchOption.AllDirectories))
+                            {
+                                try { fBytes += new FileInfo(f).Length; } catch { }
+                            }
+                            Directory.Delete(fullPath, true);
+                            cCount++;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            return (fBytes, cCount);
+        }
+
         private void LoadAndApplySavedCacheSettings()
         {
             try
@@ -104,7 +299,6 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
-        // ================== 🌟 升级器自更新引擎 ==================
         private void CleanupOldUpdater()
         {
             try
@@ -155,7 +349,7 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
-        private async void BtnAppUpdate_Click(object sender, RoutedEventArgs e)
+        public async void BtnAppUpdate_Click(object sender, RoutedEventArgs e)
         {
             string downloadUrl = (sender as Button)?.Tag?.ToString();
             if (string.IsNullOrEmpty(downloadUrl)) return;
@@ -197,7 +391,6 @@ namespace ChromeUpdaterWPF
             }
         }
 
-        // ================== 🌟 基础环境检测与防爆限制 ==================
         private void CheckRunningDirectory()
         {
             try
@@ -258,7 +451,6 @@ namespace ChromeUpdaterWPF
                     btnAICheck.Content = "AI 模型体检";
                     btnAICheck.IsEnabled = false;
                     btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(149, 165, 166));
-                    btnAICheck.ToolTip = "未检测到本地或系统 Chrome 浏览器";
                     return;
                 }
 
@@ -267,51 +459,188 @@ namespace ChromeUpdaterWPF
                     btnAICheck.Content = "存在AI模型";
                     btnAICheck.IsEnabled = true;
                     btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(211, 84, 0));
-                    btnAICheck.ToolTip = "点击可清理！！！";
                 }
                 else
                 {
                     btnAICheck.Content = "纯净无AI模型";
                     btnAICheck.IsEnabled = true;
                     btnAICheck.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(155, 89, 182));
-                    btnAICheck.ToolTip = "恭喜！当前环境非常纯净，没有 AI 模型垃圾文件。";
                 }
             }
             catch { }
         }
 
-        // ================== 🌟 极客防线模块：AI与缓存防线 ==================
-        private void ApplyAiGroupPolicy()
+        // ================== 🌟 极客防线模块：底层逻辑注入 ==================
+        private void ApplyEnterprisePolicies(string configJson)
         {
             try
             {
                 using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Policies\Google\Chrome"))
                 {
-                    if (key != null)
+                    if (key == null) return;
+
+                    key.SetValue("UserDataDir", GetNormalizedPath(userDataDir), Microsoft.Win32.RegistryValueKind.String);
+                    key.SetValue("DefaultBrowserSettingEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+
+                    Match policyBlock = Regex.Match(configJson, @"""Policies""\s*:\s*\{([^}]*)\}");
+                    if (policyBlock.Success)
                     {
-                        key.SetValue("GenAILocalFoundationalModelSettings", 1, Microsoft.Win32.RegistryValueKind.DWord);
-                        key.SetValue("OptimizationGuideModelDownloading", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                        // 注入数字型策略
+                        foreach (Match m in Regex.Matches(policyBlock.Groups[1].Value, @"""([A-Za-z0-9_]+)""\s*:\s*(\d+)"))
+                        {
+                            if (!m.Groups[1].Value.StartsWith("_"))
+                                key.SetValue(m.Groups[1].Value, int.Parse(m.Groups[2].Value), Microsoft.Win32.RegistryValueKind.DWord);
+                        }
+
+                        // 注入字符串型策略 (处理如 HttpsOnlyMode: "disallowed")
+                        foreach (Match m in Regex.Matches(policyBlock.Groups[1].Value, @"""([A-Za-z0-9_]+)""\s*:\s*""([^""]+)"""))
+                        {
+                            if (!m.Groups[1].Value.StartsWith("_"))
+                            {
+                                if (m.Groups[2].Value == "default")
+                                    try { key.DeleteValue(m.Groups[1].Value); } catch { }
+                                else
+                                    key.SetValue(m.Groups[1].Value, m.Groups[2].Value, Microsoft.Win32.RegistryValueKind.String);
+                            }
+                        }
+                    }
+
+                    if (rdoDisableCacheYes.IsChecked == true) key.SetValue("MetricsReportingEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                    else try { key.DeleteValue("MetricsReportingEnabled"); } catch { }
+
+                    if (rdoLimitYes.IsChecked == true && double.TryParse(txtCacheLimit.Text, out double gb) && gb > 0)
+                    {
+                        long bytes = (long)(gb * 1024 * 1024 * 1024);
+                        if (bytes > int.MaxValue) bytes = int.MaxValue;
+                        key.SetValue("DiskCacheSize", (int)bytes, Microsoft.Win32.RegistryValueKind.DWord);
+
+                        long mediaBytes = bytes / 5;
+                        if (mediaBytes > 500 * 1024 * 1024) mediaBytes = 500 * 1024 * 1024;
+                        key.SetValue("MediaCacheSize", (int)mediaBytes, Microsoft.Win32.RegistryValueKind.DWord);
+                    }
+                    else
+                    {
+                        try { key.DeleteValue("DiskCacheSize"); } catch { }
+                        try { key.DeleteValue("MediaCacheSize"); } catch { }
                     }
                 }
             }
             catch { }
         }
 
-        // 🌟 核心破局：向 HKCU 写入 UserDataDir 组策略，让 Chrome 原生识别便携目录，彻底解决微信唤醒开新窗口的问题！
-        private void ApplyUserDataPolicy()
+        private void ApplyChromeTuningConfig()
         {
+            EnsureOptimizerConfig();
+            string configJson = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+
+            ApplyEnterprisePolicies(configJson);
+
             try
             {
-                using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Policies\Google\Chrome"))
+                if (Process.GetProcessesByName("chrome").Length > 0)
                 {
-                    if (key != null)
-                    {
-                        string dataPath = GetNormalizedPath(userDataDir);
-                        key.SetValue("UserDataDir", dataPath, Microsoft.Win32.RegistryValueKind.String);
-                    }
+                    MessageBox.Show("【参数注入提示】\n\n检测到有 Chrome 进程正在后台运行。\n为了让所有的优化策略规则完美生效，请先关闭全部 Chrome 窗口！", "请关闭 Chrome", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
             catch { }
+
+            var targetUserDirs = new List<string> { userDataDir };
+            try { string localPath = GetLocalUserDataDir(); if (!string.IsNullOrEmpty(localPath)) targetUserDirs.Add(localPath); } catch { }
+
+            foreach (var uDir in targetUserDirs)
+            {
+                try
+                {
+                    string defaultDir = Path.Combine(uDir, "Default");
+                    if (!Directory.Exists(defaultDir)) Directory.CreateDirectory(defaultDir);
+
+                    string localStatePath = Path.Combine(uDir, "Local State");
+                    string localStateContent = File.Exists(localStatePath) ? File.ReadAllText(localStatePath) : "{}";
+                    File.WriteAllText(localStatePath, InjectLabsExperiments(localStateContent, configJson));
+
+                    string prefPath = Path.Combine(defaultDir, "Preferences");
+                    string prefContent = File.Exists(prefPath) ? File.ReadAllText(prefPath) : "{}";
+                    File.WriteAllText(prefPath, InjectPreferences(prefContent, configJson));
+
+                    LockAiDirectoryIfClean(uDir);
+                    LockDisposableCachesIfEnabled(uDir);
+                }
+                catch { }
+            }
+        }
+
+        private string InjectLabsExperiments(string localStateJson, string configJson)
+        {
+            var targetFlags = new List<string>();
+            Match flagsBlock = Regex.Match(configJson, @"""Flags""\s*:\s*\[([^\]]*)\]");
+            if (flagsBlock.Success)
+            {
+                foreach (Match m in Regex.Matches(flagsBlock.Groups[1].Value, @"""([^""]+)""")) targetFlags.Add(m.Groups[1].Value);
+            }
+
+            if (string.IsNullOrWhiteSpace(localStateJson) || localStateJson.Trim() == "{}")
+                return "{\"browser\":{\"enabled_labs_experiments\":[" + string.Join(",", targetFlags.ConvertAll(f => $"\"{f}\"")) + "]}}";
+
+            if (!localStateJson.Contains("\"browser\""))
+            {
+                int index = localStateJson.IndexOf('{');
+                if (index >= 0) localStateJson = localStateJson.Insert(index + 1, "\"browser\":{},");
+            }
+            Match browserMatch = Regex.Match(localStateJson, @"""browser""\s*:\s*\{");
+            if (browserMatch.Success && !localStateJson.Contains("\"enabled_labs_experiments\""))
+                localStateJson = localStateJson.Insert(browserMatch.Index + browserMatch.Length, "\"enabled_labs_experiments\":[],");
+
+            Match arrayMatch = Regex.Match(localStateJson, @"""enabled_labs_experiments""\s*:\s*\[([^\]]*)\]");
+            if (arrayMatch.Success)
+            {
+                var currentFlags = new List<string>();
+                foreach (Match m in Regex.Matches(arrayMatch.Groups[1].Value, @"""([^""]+)""")) currentFlags.Add(m.Groups[1].Value);
+                foreach (var flag in targetFlags) { currentFlags.RemoveAll(f => f.StartsWith(flag.Split('@')[0] + "@")); currentFlags.Add(flag); }
+                localStateJson = Regex.Replace(localStateJson, @"""enabled_labs_experiments""\s*:\s*\[([^\]]*)\]", $"\"enabled_labs_experiments\":[{string.Join(",", currentFlags.ConvertAll(f => $"\"{f}\""))}]");
+            }
+            return localStateJson;
+        }
+
+        private string InjectPreferences(string prefJson, string configJson)
+        {
+            if (string.IsNullOrWhiteSpace(prefJson) || prefJson.Trim() == "{}") prefJson = "{}";
+
+            Match prefsBlock = Regex.Match(configJson, @"""Preferences""\s*:\s*\{([^}]*)\}");
+            if (prefsBlock.Success)
+            {
+                foreach (Match m in Regex.Matches(prefsBlock.Groups[1].Value, @"""([^""]+)""\s*:\s*(\{[^\}]+\}|""[^""]+""|[\w]+)"))
+                {
+                    string keyPair = m.Groups[1].Value;
+                    string val = m.Groups[2].Value;
+                    if (keyPair.StartsWith("_") || !keyPair.Contains("|")) continue;
+
+                    string parent = keyPair.Split('|')[0];
+                    string child = keyPair.Split('|')[1];
+                    prefJson = InjectJsonKeyValue(prefJson, parent, child, val);
+                }
+            }
+            return prefJson;
+        }
+
+        private string InjectJsonKeyValue(string json, string parentKey, string childKey, string value)
+        {
+            if (!json.Contains($"\"{parentKey}\""))
+            {
+                int index = json.IndexOf('{');
+                if (index >= 0) json = json.Insert(index + 1, $"\"{parentKey}\":{{}},");
+            }
+            Match parentMatch = Regex.Match(json, @"""" + parentKey + @"""\s*:\s*\{");
+            if (parentMatch.Success)
+            {
+                Match childMatch = Regex.Match(json, @"""" + childKey + @"""\s*:\s*([^,{}]+|\{[^{}]*\})");
+                if (childMatch.Success)
+                {
+                    string updatedSub = Regex.Replace(json.Substring(parentMatch.Index), @"""" + childKey + @"""\s*:\s*([^,{}]+|\{[^{}]*\})", $"\"{childKey}\":{value}", RegexOptions.None);
+                    json = json.Substring(0, parentMatch.Index) + updatedSub;
+                }
+                else json = json.Insert(parentMatch.Index + parentMatch.Length, $"\"{childKey}\":{value},");
+            }
+            return json.Replace(",,", ",").Replace(",}", "}").Replace("{,", "{");
         }
 
         private void LockAiDirectoryIfClean(string uDir)
@@ -323,30 +652,6 @@ namespace ChromeUpdaterWPF
                 {
                     File.WriteAllText(aiPath, "LOCKED_BY_CHROME_PORTABLE_UPDATER");
                     File.SetAttributes(aiPath, FileAttributes.ReadOnly | FileAttributes.Hidden);
-                }
-            }
-            catch { }
-        }
-
-        private void ApplyCacheGroupPolicy()
-        {
-            try
-            {
-                using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Policies\Google\Chrome"))
-                {
-                    if (key != null)
-                    {
-                        if (rdoDisableCacheYes.IsChecked == true) key.SetValue("MetricsReportingEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
-                        else try { key.DeleteValue("MetricsReportingEnabled"); } catch { }
-
-                        if (rdoLimitYes.IsChecked == true && double.TryParse(txtCacheLimit.Text, out double gb) && gb > 0)
-                        {
-                            long bytes = (long)(gb * 1024 * 1024 * 1024);
-                            if (bytes > int.MaxValue) bytes = int.MaxValue;
-                            key.SetValue("DiskCacheSize", (int)bytes, Microsoft.Win32.RegistryValueKind.DWord);
-                        }
-                        else try { key.DeleteValue("DiskCacheSize"); } catch { }
-                    }
                 }
             }
             catch { }
@@ -382,106 +687,6 @@ namespace ChromeUpdaterWPF
             }
         }
 
-        private void ApplyChromeTuningConfig()
-        {
-            // 🌟 注入 UserDataDir 组策略
-            ApplyUserDataPolicy();
-            ApplyAiGroupPolicy();
-            ApplyCacheGroupPolicy();
-            // ... 后续代码保持不变 ...
-
-            try
-            {
-                if (Process.GetProcessesByName("chrome").Length > 0)
-                {
-                    MessageBox.Show("【参数注入提示】\n\n检测到原生 Chrome 正在后台运行。\n由于运行中的 Chrome 会独占配置，为了彻底屏蔽 AI 功能和缓存控制，请先关闭全部 Chrome 窗口后再继续！", "请先关闭 Chrome", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-            }
-            catch { }
-
-            var targetUserDirs = new List<string> { userDataDir };
-            try
-            {
-                string localPath = GetLocalUserDataDir();
-                if (!string.IsNullOrEmpty(localPath)) targetUserDirs.Add(localPath);
-            }
-            catch { }
-
-            foreach (var uDir in targetUserDirs)
-            {
-                try
-                {
-                    string defaultDir = Path.Combine(uDir, "Default");
-                    if (!Directory.Exists(defaultDir)) Directory.CreateDirectory(defaultDir);
-
-                    string localStatePath = Path.Combine(uDir, "Local State");
-                    string localStateContent = File.Exists(localStatePath) ? File.ReadAllText(localStatePath) : "{}";
-                    File.WriteAllText(localStatePath, InjectLabsExperiments(localStateContent));
-
-                    string prefPath = Path.Combine(defaultDir, "Preferences");
-                    string prefContent = File.Exists(prefPath) ? File.ReadAllText(prefPath) : "{}";
-                    File.WriteAllText(prefPath, InjectPreferences(prefContent));
-
-                    LockAiDirectoryIfClean(uDir);
-                    LockDisposableCachesIfEnabled(uDir);
-                }
-                catch { }
-            }
-        }
-
-        private string InjectLabsExperiments(string json)
-        {
-            var targetFlags = new List<string> { "optimization-guide-on-device-model@2", "prompt-api-for-gemini-nano@2", "ai-mode-omnibox-entrypoint@2", "glic@2", "summarization-api-for-gemini-nano@2", "compose@2", "enable-parallel-downloading@1", "hardware-media-key-handling@2", "smooth-scrolling@1", "enable-gpu-rasterization@1" };
-            if (string.IsNullOrWhiteSpace(json) || json.Trim() == "{}") return "{\"browser\":{\"enabled_labs_experiments\":[" + string.Join(",", targetFlags.ConvertAll(f => $"\"{f}\"")) + "]}}";
-
-            if (!json.Contains("\"browser\""))
-            {
-                int index = json.IndexOf('{');
-                if (index >= 0) json = json.Insert(index + 1, "\"browser\":{},");
-            }
-            Match browserMatch = Regex.Match(json, @"""browser""\s*:\s*\{");
-            if (browserMatch.Success && !json.Contains("\"enabled_labs_experiments\"")) json = json.Insert(browserMatch.Index + browserMatch.Length, "\"enabled_labs_experiments\":[],");
-
-            Match arrayMatch = Regex.Match(json, @"""enabled_labs_experiments""\s*:\s*\[([^\]]*)\]");
-            if (arrayMatch.Success)
-            {
-                var currentFlags = new List<string>();
-                foreach (Match m in Regex.Matches(arrayMatch.Groups[1].Value, @"""([^""]+)""")) currentFlags.Add(m.Groups[1].Value);
-                foreach (var flag in targetFlags) { currentFlags.RemoveAll(f => f.StartsWith(flag.Split('@')[0] + "@")); currentFlags.Add(flag); }
-                json = Regex.Replace(json, @"""enabled_labs_experiments""\s*:\s*\[([^\]]*)\]", $"\"enabled_labs_experiments\":[{string.Join(",", currentFlags.ConvertAll(f => $"\"{f}\""))}]");
-            }
-            return json;
-        }
-
-        private string InjectPreferences(string json)
-        {
-            if (string.IsNullOrWhiteSpace(json) || json.Trim() == "{}") return "{\"session\":{\"restore_on_startup\":1},\"performance_tuning\":{\"high_efficiency_mode\":{\"state\":1,\"mode\":1},\"battery_saver_mode\":{\"state\":1}}}";
-            json = InjectJsonKeyValue(json, "session", "restore_on_startup", "1");
-            json = InjectJsonKeyValue(json, "performance_tuning", "high_efficiency_mode", "{\"state\":1,\"mode\":1}");
-            return InjectJsonKeyValue(json, "performance_tuning", "battery_saver_mode", "{\"state\":1}");
-        }
-
-        private string InjectJsonKeyValue(string json, string parentKey, string childKey, string value)
-        {
-            if (!json.Contains($"\"{parentKey}\""))
-            {
-                int index = json.IndexOf('{');
-                if (index >= 0) json = json.Insert(index + 1, $"\"{parentKey}\":{{}},");
-            }
-            Match parentMatch = Regex.Match(json, @"""" + parentKey + @"""\s*:\s*\{");
-            if (parentMatch.Success)
-            {
-                Match childMatch = Regex.Match(json, @"""" + childKey + @"""\s*:\s*([^,{}]+|\{[^{}]*\})");
-                if (childMatch.Success)
-                {
-                    string updatedSub = Regex.Replace(json.Substring(parentMatch.Index), @"""" + childKey + @"""\s*:\s*([^,{}]+|\{[^{}]*\})", $"\"{childKey}\":{value}", RegexOptions.None);
-                    json = json.Substring(0, parentMatch.Index) + updatedSub;
-                }
-                else json = json.Insert(parentMatch.Index + parentMatch.Length, $"\"{childKey}\":{value},");
-            }
-            return json.Replace(",,", ",").Replace(",}", "}").Replace("{,", "{");
-        }
-
         // ================== 🌟 UI 与交互事件 ==================
         public void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) { this.DragMove(); }
         public void BtnMinimize_Click(object sender, RoutedEventArgs e) { this.WindowState = WindowState.Minimized; }
@@ -498,8 +703,8 @@ namespace ChromeUpdaterWPF
 
         private void WeChat_Click(object sender, RoutedEventArgs e)
         {
-            try { Clipboard.SetText("jiujiujiayi666"); MessageBox.Show("微信号【jiujiujiayi666】已成功复制到剪贴板！\n您可以直接去微信中粘贴搜索、添加好友。", "技术支持", MessageBoxButton.OK, MessageBoxImage.Information); }
-            catch (Exception ex) { MessageBox.Show($"微信号复制失败: {ex.Message}\n请手动记录微信号: jiujiujiayi666", "技术支持"); }
+            try { Clipboard.SetText("jiujiujiayi666"); MessageBox.Show("微信号已成功复制！\n您可以去微信中粘贴添加好友。", "技术支持", MessageBoxButton.OK, MessageBoxImage.Information); }
+            catch (Exception ex) { MessageBox.Show($"复制失败: {ex.Message}", "技术支持"); }
         }
 
         private void Telegram_Click(object sender, RoutedEventArgs e)
@@ -519,8 +724,16 @@ namespace ChromeUpdaterWPF
         {
             ApplyChromeTuningConfig();
             UpdateBorderStyles(Directory.Exists(portableDir) && File.Exists(chromeExe), IsPortableChromeDefault(), ShortcutsExistOnDesktop());
-            if (rdoDisableCacheYes.IsChecked == true) { lblStatus.Text = "已成功开启无用缓存拦截！"; lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113)); }
-            else { lblStatus.Text = "已解除无用缓存拦截。"; lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 73, 94)); }
+            if (rdoDisableCacheYes.IsChecked == true)
+            {
+                lblStatus.Text = "已成功开启无用缓存拦截！";
+                lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113));
+            }
+            else
+            {
+                lblStatus.Text = "已解除无用缓存拦截。";
+                lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 73, 94));
+            }
         }
 
         public void RdoLimit_Click(object sender, RoutedEventArgs e)
@@ -528,11 +741,22 @@ namespace ChromeUpdaterWPF
             txtCacheLimit.IsEnabled = (rdoLimitYes.IsChecked == true);
             ApplyChromeTuningConfig();
             UpdateBorderStyles(Directory.Exists(portableDir) && File.Exists(chromeExe), IsPortableChromeDefault(), ShortcutsExistOnDesktop());
-            if (rdoLimitYes.IsChecked == true) { lblStatus.Text = $"已限制磁盘缓存上限为 {txtCacheLimit.Text} GB！"; lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113)); }
-            else { lblStatus.Text = "已取消缓存容量限制。"; lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 73, 94)); }
+            if (rdoLimitYes.IsChecked == true)
+            {
+                lblStatus.Text = $"已限制磁盘缓存上限为 {txtCacheLimit.Text} GB！";
+                lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113));
+            }
+            else
+            {
+                lblStatus.Text = "已取消缓存容量限制。";
+                lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 73, 94));
+            }
         }
 
-        public void TxtCacheLimit_PreviewTextInput(object sender, TextCompositionEventArgs e) { e.Handled = !Regex.IsMatch(e.Text, @"[\d\.]"); }
+        public void TxtCacheLimit_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            e.Handled = !Regex.IsMatch(e.Text, @"[\d\.]");
+        }
 
         public void TxtCacheLimit_TextChanged(object sender, TextChangedEventArgs e)
         {
@@ -549,30 +773,7 @@ namespace ChromeUpdaterWPF
 
         public void BtnCleanCache_Click(object sender, RoutedEventArgs e)
         {
-            var targetUserDirs = new List<string> { userDataDir };
-            try { string localPath = GetLocalUserDataDir(); if (!string.IsNullOrEmpty(localPath)) targetUserDirs.Add(localPath); } catch { }
-
-            long freedBytes = 0; int cleanedCount = 0;
-            string[] relativeCachePaths = { @"Default\Cache", @"Default\Code Cache", @"Default\GPUCache", @"Default\Media Cache", @"GPUCache", @"ShaderCache", @"GrShaderCache", @"GraphiteDawnCache", @"Crashpad", @"BrowserMetrics" };
-
-            foreach (var uDir in targetUserDirs)
-            {
-                foreach (var relPath in relativeCachePaths)
-                {
-                    try
-                    {
-                        string fullPath = Path.Combine(uDir, relPath);
-                        if (Directory.Exists(fullPath))
-                        {
-                            foreach (var f in Directory.GetFiles(fullPath, "*", SearchOption.AllDirectories)) { try { freedBytes += new FileInfo(f).Length; } catch { } }
-                            Directory.Delete(fullPath, true);
-                            cleanedCount++;
-                        }
-                    }
-                    catch { }
-                }
-            }
-
+            var (freedBytes, cleanedCount) = PerformSilentCacheClean();
             ApplyChromeTuningConfig();
             double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2);
             string freedText = freedMb > 1024 ? $"{Math.Round(freedMb / 1024, 2)} GB" : $"{freedMb} MB";
@@ -581,59 +782,120 @@ namespace ChromeUpdaterWPF
 
         private async void CmbChannel_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (IsLoaded) { await CheckAndDisplayVersionAsync(); UpdateAiButtonStatus(); }
+            if (IsLoaded)
+            {
+                await CheckAndDisplayVersionAsync();
+                UpdateAiButtonStatus();
+            }
         }
 
-        // ================== 🌟 界面状态与检测 ==================
+        // ================== 🌟 界面状态更新 ==================
         private void UpdateBorderStyles(bool chromeExists, bool isDefault, bool shortcutsExist)
         {
             var activeRed = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(231, 76, 60));
             var defaultText = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 73, 94));
 
-            if (rdo64.IsChecked == true) { rdo64.Foreground = activeRed; rdo64.FontWeight = FontWeights.Bold; rdo32.Foreground = defaultText; rdo32.FontWeight = FontWeights.Normal; }
-            else { rdo32.Foreground = activeRed; rdo32.FontWeight = FontWeights.Bold; rdo64.Foreground = defaultText; rdo64.FontWeight = FontWeights.Normal; }
+            if (rdo64.IsChecked == true)
+            {
+                rdo64.Foreground = activeRed; rdo64.FontWeight = FontWeights.Bold;
+                rdo32.Foreground = defaultText; rdo32.FontWeight = FontWeights.Normal;
+            }
+            else
+            {
+                rdo32.Foreground = activeRed; rdo32.FontWeight = FontWeights.Bold;
+                rdo64.Foreground = defaultText; rdo64.FontWeight = FontWeights.Normal;
+            }
 
             for (int i = 0; i < cmbChannel.Items.Count; i++)
             {
                 if (cmbChannel.Items[i] is ComboBoxItem item)
                 {
-                    if (chromeExists && i == cmbChannel.SelectedIndex) { item.Foreground = activeRed; item.FontWeight = FontWeights.Bold; }
-                    else { item.Foreground = defaultText; item.FontWeight = FontWeights.Normal; }
+                    if (chromeExists && i == cmbChannel.SelectedIndex)
+                    {
+                        item.Foreground = activeRed; item.FontWeight = FontWeights.Bold;
+                    }
+                    else
+                    {
+                        item.Foreground = defaultText; item.FontWeight = FontWeights.Normal;
+                    }
                 }
             }
 
             if (chromeExists)
             {
                 cmbChannel.Foreground = activeRed; cmbChannel.FontWeight = FontWeights.Bold;
-                if (isDefault) { rdoDefaultYes.IsChecked = true; rdoDefaultYes.Foreground = activeRed; rdoDefaultYes.FontWeight = FontWeights.Bold; rdoDefaultNo.Foreground = defaultText; rdoDefaultNo.FontWeight = FontWeights.Normal; }
-                else { rdoDefaultNo.IsChecked = true; rdoDefaultNo.Foreground = activeRed; rdoDefaultNo.FontWeight = FontWeights.Bold; rdoDefaultYes.Foreground = defaultText; rdoDefaultYes.FontWeight = FontWeights.Normal; }
-                if (shortcutsExist) { rdoShortcutYes.IsChecked = true; rdoShortcutYes.Foreground = activeRed; rdoShortcutYes.FontWeight = FontWeights.Bold; rdoShortcutNo.Foreground = defaultText; rdoShortcutNo.FontWeight = FontWeights.Normal; }
-                else { rdoShortcutNo.IsChecked = true; rdoShortcutNo.Foreground = activeRed; rdoShortcutNo.FontWeight = FontWeights.Bold; rdoShortcutYes.Foreground = defaultText; rdoShortcutYes.FontWeight = FontWeights.Normal; }
+                if (isDefault)
+                {
+                    rdoDefaultYes.IsChecked = true; rdoDefaultYes.Foreground = activeRed; rdoDefaultYes.FontWeight = FontWeights.Bold;
+                    rdoDefaultNo.Foreground = defaultText; rdoDefaultNo.FontWeight = FontWeights.Normal;
+                }
+                else
+                {
+                    rdoDefaultNo.IsChecked = true; rdoDefaultNo.Foreground = activeRed; rdoDefaultNo.FontWeight = FontWeights.Bold;
+                    rdoDefaultYes.Foreground = defaultText; rdoDefaultYes.FontWeight = FontWeights.Normal;
+                }
+                if (shortcutsExist)
+                {
+                    rdoShortcutYes.IsChecked = true; rdoShortcutYes.Foreground = activeRed; rdoShortcutYes.FontWeight = FontWeights.Bold;
+                    rdoShortcutNo.Foreground = defaultText; rdoShortcutNo.FontWeight = FontWeights.Normal;
+                }
+                else
+                {
+                    rdoShortcutNo.IsChecked = true; rdoShortcutNo.Foreground = activeRed; rdoShortcutNo.FontWeight = FontWeights.Bold;
+                    rdoShortcutYes.Foreground = defaultText; rdoShortcutYes.FontWeight = FontWeights.Normal;
+                }
             }
             else
             {
                 cmbChannel.Foreground = defaultText; cmbChannel.FontWeight = FontWeights.Normal;
-                rdoDefaultNo.IsChecked = true; rdoDefaultYes.Foreground = defaultText; rdoDefaultYes.FontWeight = FontWeights.Normal; rdoDefaultNo.Foreground = defaultText; rdoDefaultNo.FontWeight = FontWeights.Normal;
-                rdoShortcutNo.IsChecked = true; rdoShortcutYes.Foreground = defaultText; rdoShortcutYes.FontWeight = FontWeights.Normal; rdoShortcutNo.Foreground = defaultText; rdoShortcutNo.FontWeight = FontWeights.Normal;
+                rdoDefaultNo.IsChecked = true; rdoDefaultYes.Foreground = defaultText; rdoDefaultYes.FontWeight = FontWeights.Normal;
+                rdoDefaultNo.Foreground = defaultText; rdoDefaultNo.FontWeight = FontWeights.Normal;
+                rdoShortcutNo.IsChecked = true; rdoShortcutYes.Foreground = defaultText; rdoShortcutYes.FontWeight = FontWeights.Normal;
+                rdoShortcutNo.Foreground = defaultText; rdoShortcutNo.FontWeight = FontWeights.Normal;
             }
 
-            if (rdoDisableCacheYes.IsChecked == true) { rdoDisableCacheYes.Foreground = activeRed; rdoDisableCacheYes.FontWeight = FontWeights.Bold; rdoDisableCacheNo.Foreground = defaultText; rdoDisableCacheNo.FontWeight = FontWeights.Normal; }
-            else { rdoDisableCacheNo.Foreground = activeRed; rdoDisableCacheNo.FontWeight = FontWeights.Bold; rdoDisableCacheYes.Foreground = defaultText; rdoDisableCacheYes.FontWeight = FontWeights.Normal; }
+            if (rdoDisableCacheYes.IsChecked == true)
+            {
+                rdoDisableCacheYes.Foreground = activeRed; rdoDisableCacheYes.FontWeight = FontWeights.Bold;
+                rdoDisableCacheNo.Foreground = defaultText; rdoDisableCacheNo.FontWeight = FontWeights.Normal;
+            }
+            else
+            {
+                rdoDisableCacheNo.Foreground = activeRed; rdoDisableCacheNo.FontWeight = FontWeights.Bold;
+                rdoDisableCacheYes.Foreground = defaultText; rdoDisableCacheYes.FontWeight = FontWeights.Normal;
+            }
 
-            if (rdoLimitYes.IsChecked == true) { rdoLimitYes.Foreground = activeRed; rdoLimitYes.FontWeight = FontWeights.Bold; rdoLimitNo.Foreground = defaultText; rdoLimitNo.FontWeight = FontWeights.Normal; }
-            else { rdoLimitNo.Foreground = activeRed; rdoLimitNo.FontWeight = FontWeights.Bold; rdoLimitYes.Foreground = defaultText; rdoLimitYes.FontWeight = FontWeights.Normal; }
+            if (rdoLimitYes.IsChecked == true)
+            {
+                rdoLimitYes.Foreground = activeRed; rdoLimitYes.FontWeight = FontWeights.Bold;
+                rdoLimitNo.Foreground = defaultText; rdoLimitNo.FontWeight = FontWeights.Normal;
+            }
+            else
+            {
+                rdoLimitNo.Foreground = activeRed; rdoLimitNo.FontWeight = FontWeights.Bold;
+                rdoLimitYes.Foreground = defaultText; rdoLimitYes.FontWeight = FontWeights.Normal;
+            }
         }
 
         private async Task CheckAndDisplayVersionAsync()
         {
             string localVer = "";
-            if (Directory.Exists(portableDir) && File.Exists(chromeExe)) { try { localVer = FileVersionInfo.GetVersionInfo(chromeExe).FileVersion; ManageShortcuts(); } catch { } }
+            if (Directory.Exists(portableDir) && File.Exists(chromeExe))
+            {
+                try
+                {
+                    localVer = FileVersionInfo.GetVersionInfo(chromeExe).FileVersion;
+                    ManageShortcuts();
+                }
+                catch { }
+            }
 
             if (string.IsNullOrEmpty(localVer))
             {
-                lblStatus.Text = "本地还没有Chrome浏览器，请点击【检查并更新】来获取！";
+                lblStatus.Text = "本地还没有Chrome浏览器，请点击【检查更新】来获取！";
                 lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(231, 76, 60));
-                UpdateBorderStyles(false, false, false); return;
+                UpdateBorderStyles(false, false, false);
+                return;
             }
 
             UpdateBorderStyles(true, IsPortableChromeDefault(), ShortcutsExistOnDesktop());
@@ -645,7 +907,11 @@ namespace ChromeUpdaterWPF
             bool is64 = rdo64.IsChecked == true;
             string onlineVer = await Task.Run(() => FetchLatestVersion(os, channelIndex, is64));
 
-            if (string.IsNullOrEmpty(onlineVer)) { lblStatus.Text = $"本地Chrome浏览器版本为 {localVer} (云端检测失败)"; return; }
+            if (string.IsNullOrEmpty(onlineVer))
+            {
+                lblStatus.Text = $"本地Chrome浏览器版本为 {localVer} (云端检测失败)";
+                return;
+            }
 
             if (CompareVersions(localVer, onlineVer) >= 0)
             {
@@ -654,11 +920,12 @@ namespace ChromeUpdaterWPF
             }
             else
             {
-                lblStatus.Text = $"本地浏览器版本为 {localVer}，最新版本为 {onlineVer}，请点击【检查并更新】获取最新版！";
+                lblStatus.Text = $"本地浏览器版本为 {localVer}，最新版 {onlineVer}，请【检查更新】！";
                 lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(230, 126, 34));
             }
         }
 
+        // ================== 🌟 快捷方式与默认浏览器接管 ==================
         private bool ShortcutsExistOnDesktop()
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -699,13 +966,8 @@ namespace ChromeUpdaterWPF
                 string shortcutPortable = Path.Combine(desktop, "Chrome 便携版.lnk");
                 string shortcutNormal = Path.Combine(desktop, "Chrome 浏览器.lnk");
 
-                // 1. 无论如何，先物理删除旧的“Chrome 浏览器.lnk”，不再保留双快捷方式
-                if (File.Exists(shortcutNormal))
-                {
-                    try { File.Delete(shortcutNormal); } catch { }
-                }
+                if (File.Exists(shortcutNormal)) { try { File.Delete(shortcutNormal); } catch { } }
 
-                // 2. 仅在勾选时生成唯一的“Chrome 便携版.lnk”
                 if (rdoShortcutYes.IsChecked == true)
                 {
                     Type t = Type.GetTypeFromProgID("WScript.Shell");
@@ -731,7 +993,15 @@ namespace ChromeUpdaterWPF
             }
         }
 
-        // ================== 🌟 系统注册表核心 (清空旧选项 + 完美 IPC) ==================
+        public void RdoShortcut_Click(object sender, RoutedEventArgs e)
+        {
+            if (Directory.Exists(portableDir) && File.Exists(chromeExe))
+            {
+                ManageShortcuts();
+                UpdateBorderStyles(true, IsPortableChromeDefault(), ShortcutsExistOnDesktop());
+            }
+        }
+
         public async void RdoDefault_Click(object sender, RoutedEventArgs e)
         {
             if (!Directory.Exists(portableDir) || !File.Exists(chromeExe)) return;
@@ -770,8 +1040,16 @@ namespace ChromeUpdaterWPF
                         if (IsPortableChromeDefault()) { isSetSuccess = true; break; }
                     }
 
-                    if (isSetSuccess) { lblStatus.Text = "太棒了！已成功将便携版设为默认浏览器。"; lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113)); }
-                    else { lblStatus.Text = "等待超时或已取消，未检测到默认浏览器变更。"; lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(231, 76, 60)); }
+                    if (isSetSuccess)
+                    {
+                        lblStatus.Text = "太棒了！已成功将便携版设为默认浏览器。";
+                        lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113));
+                    }
+                    else
+                    {
+                        lblStatus.Text = "等待超时或已取消，未检测到默认浏览器变更。";
+                        lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(231, 76, 60));
+                    }
                 }
                 else
                 {
@@ -782,36 +1060,34 @@ namespace ChromeUpdaterWPF
                     lblStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 204, 113));
                 }
 
-                rdoDefaultYes.Content = originalText; borderDefault.IsEnabled = true;
+                rdoDefaultYes.Content = originalText;
+                borderDefault.IsEnabled = true;
                 UpdateBorderStyles(true, IsPortableChromeDefault(), ShortcutsExistOnDesktop());
             }
         }
 
-        // ================= 阶段一：给便携版上“系统户口” (组策略重定向 + 绝对纯净命令行版) =================
         private void RegisterPortableChrome()
         {
             string exePath = GetNormalizedPath(chromeExe);
-            string dataPath = GetNormalizedPath(userDataDir);
             string iconPath = $"{exePath},0";
-
             string progId = "ChromePortableHTML";
             string clientName = "ChromePortable";
             string appName = "Google Chrome 便携版";
             string appDesc = "智能且快速的便携式 Web 浏览器";
 
-            // 🌟 1. 优先注入组策略重定向
-            ApplyUserDataPolicy();
+            string configJson = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+            ApplyEnterprisePolicies(configJson);
 
             try
             {
                 using (var key = Microsoft.Win32.Registry.CurrentUser)
                 {
-                    // 扫尾清理
                     string[] garbageKeys = { @"Software\Classes\ChromeHTML.Portable", @"Software\Clients\StartMenuInternet\ChromePortable", @"Software\Classes\ChromePortableHTML" };
                     foreach (var gk in garbageKeys) { try { key.DeleteSubKeyTree(gk, false); } catch { } }
 
                     bool isHijacked = false;
                     try { using (var chk = key.OpenSubKey(@"Software\Classes\ChromeHTML\shell\open\command")) { if (chk != null && chk.GetValue("")?.ToString().Contains("--user-data-dir") == true) isHijacked = true; } } catch { }
+
                     if (isHijacked)
                     {
                         try { key.DeleteSubKeyTree(@"Software\Classes\ChromeHTML", false); } catch { }
@@ -834,8 +1110,6 @@ namespace ChromeUpdaterWPF
                         using (var icon = progIdKey.CreateSubKey("DefaultIcon")) icon.SetValue("", iconPath);
                         using (var cmd = progIdKey.CreateSubKey(@"shell\open\command"))
                         {
-                            // 🌟 破局核心：注册表命令保持 100% 纯净原生格式，不带 --user-data-dir！
-                            // Chrome 启动后会自动读取 HKCU 组策略里的 UserDataDir 路径，从而原生打开新标签页！
                             cmd.SetValue("", $"\"{exePath}\" --single-argument %1");
                             cmd.SetValue("DelegateExecute", "");
                         }
@@ -894,7 +1168,8 @@ namespace ChromeUpdaterWPF
             try
             {
                 string exePath = GetNormalizedPath(chromeExe);
-                ApplyUserDataPolicy();
+                string configJson = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+                ApplyEnterprisePolicies(configJson);
 
                 using (var key = Microsoft.Win32.Registry.CurrentUser)
                 {
@@ -913,16 +1188,7 @@ namespace ChromeUpdaterWPF
             catch { }
         }
 
-        // ================== 🌟 其余按钮逻辑 ==================
-        public void RdoShortcut_Click(object sender, RoutedEventArgs e)
-        {
-            if (Directory.Exists(portableDir) && File.Exists(chromeExe))
-            {
-                ManageShortcuts();
-                UpdateBorderStyles(true, IsPortableChromeDefault(), ShortcutsExistOnDesktop());
-            }
-        }
-
+        // ================== 🌟 核心操作按钮 ==================
         public void BtnLaunch_Click(object sender, RoutedEventArgs e)
         {
             if (File.Exists(chromeExe))
@@ -932,7 +1198,6 @@ namespace ChromeUpdaterWPF
                     ApplyChromeTuningConfig();
                     ManageShortcuts();
 
-                    // 🌟 启动参数全小写拉齐
                     string exePath = GetExactCanonicalPath(chromeExe);
                     string dataPath = GetExactCanonicalPath(userDataDir);
 
@@ -950,7 +1215,7 @@ namespace ChromeUpdaterWPF
         private void BtnAICheck_Click(object sender, RoutedEventArgs e)
         {
             if (!IsAiModelPresent(out List<string> foundPaths)) return;
-            var result = MessageBox.Show("【AI 模型清理】\n\n检测到本地 UserData 中存在已下载的本地 AI 模型(占用数GB空间)！\n\n是否立即物理清理缓存，并彻底封死未来静默下载？", "确认清理 AI 模型", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var result = MessageBox.Show("【AI 模型清理】\n\n检测到本地或系统存在已静默下载的 AI 模型！\n\n是否立即物理清理，并通过企业策略彻底锁死未来下载通道？", "确认清理", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (result == MessageBoxResult.Yes)
             {
                 ApplyChromeTuningConfig();
@@ -970,7 +1235,7 @@ namespace ChromeUpdaterWPF
                 }
                 double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2);
                 string freedText = freedMb > 1024 ? $"{Math.Round(freedMb / 1024, 2)} GB" : $"{freedMb} MB";
-                MessageBox.Show($"【清理完成】\n\n清除 {deletedCount} 个 AI 模型目录！\n共释放空间: {freedText}\n\n已锁死 AI 静默下载！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show($"【清理完成】\n\n清除 {deletedCount} 个 AI 模型目录！\n共释放空间: {freedText}\n\n已为您通过策略外置引擎锁死 AI 静默下载！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
                 UpdateAiButtonStatus();
             }
         }
@@ -983,17 +1248,24 @@ namespace ChromeUpdaterWPF
             bool is64 = rdo64.IsChecked == true;
             string onlineVer = await Task.Run(() => FetchLatestVersion(os, channelIndex, is64));
 
-            if (string.IsNullOrEmpty(onlineVer)) { MessageBox.Show("网络连接超时！"); btnUpdate.IsEnabled = btnLaunch.IsEnabled = true; return; }
+            if (string.IsNullOrEmpty(onlineVer))
+            {
+                MessageBox.Show("网络连接超时！");
+                btnUpdate.IsEnabled = btnLaunch.IsEnabled = true;
+                return;
+            }
 
             string localVer = File.Exists(chromeExe) ? FileVersionInfo.GetVersionInfo(chromeExe).FileVersion : "";
             if (CompareVersions(localVer, onlineVer) >= 0)
             {
                 MessageBox.Show("已经是最新版了亲。");
                 await CheckAndDisplayVersionAsync();
-                btnUpdate.IsEnabled = btnLaunch.IsEnabled = true; return;
+                btnUpdate.IsEnabled = btnLaunch.IsEnabled = true;
+                return;
             }
 
-            OverlayPanel.Visibility = Visibility.Visible; StartBlinking();
+            OverlayPanel.Visibility = Visibility.Visible;
+            StartBlinking();
             try
             {
                 ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
@@ -1001,6 +1273,7 @@ namespace ChromeUpdaterWPF
                 var (_, downloadUrl) = GetChromeDownloadInfo(os, onlineVer, is64, channelIndex);
                 string szPath = Path.Combine(portableDir, "7zr.exe");
                 if (!File.Exists(szPath)) await Download7zWithFallback(szPath);
+
                 string installerPath = Path.Combine(portableDir, "chrome_installer.exe");
                 lblOverlayStatus.Text = $"正在直连下载 Chrome {onlineVer}...";
 
@@ -1014,29 +1287,40 @@ namespace ChromeUpdaterWPF
                 lblOverlayStatus.Text = "正在执行双重静静解压缩...";
                 progressBar.IsIndeterminate = true;
                 await Task.Run(() => PerformExtraction(szPath, installerPath));
-                progressBar.IsIndeterminate = false; progressBar.Value = 100;
+                progressBar.IsIndeterminate = false;
+                progressBar.Value = 100;
 
-                ApplyChromeTuningConfig(); ManageShortcuts();
-                if (rdoDefaultYes.IsChecked == true) RunProcess(chromeExe, "--make-default-browser");
+                ApplyChromeTuningConfig();
+                ManageShortcuts();
+
+                if (rdoDefaultYes.IsChecked == true)
+                    RunProcess(chromeExe, "--make-default-browser");
 
                 System.Media.SystemSounds.Asterisk.Play();
                 lblOverlayStatus.Text = $"Chrome浏览器已成功升级为最新版 {onlineVer}！";
                 await Task.Delay(7000);
             }
-            catch (Exception ex) { MessageBox.Show($"更新发生错误: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"更新发生错误: {ex.Message}");
+            }
             finally
             {
-                StopBlinking(); OverlayPanel.Visibility = Visibility.Collapsed;
-                await CheckAndDisplayVersionAsync(); UpdateAiButtonStatus();
+                StopBlinking();
+                OverlayPanel.Visibility = Visibility.Collapsed;
+                await CheckAndDisplayVersionAsync();
+                UpdateAiButtonStatus();
                 btnUpdate.IsEnabled = btnLaunch.IsEnabled = true;
             }
         }
 
-        // ================== 🌟 下载、解压等网络核心 ==================
+        // ================== 🌟 下载、解压网络模块 ==================
         private void PerformExtraction(string szPath, string installerPath)
         {
-            string temp1 = Path.Combine(portableDir, "Temp1"), temp2 = Path.Combine(portableDir, "Temp2");
-            string temp3 = Path.Combine(portableDir, "Temp3"), temp4 = Path.Combine(portableDir, "Temp4");
+            string temp1 = Path.Combine(portableDir, "Temp1");
+            string temp2 = Path.Combine(portableDir, "Temp2");
+            string temp3 = Path.Combine(portableDir, "Temp3");
+            string temp4 = Path.Combine(portableDir, "Temp4");
 
             if (Directory.Exists(temp1)) Directory.Delete(temp1, true);
             if (Directory.Exists(temp2)) Directory.Delete(temp2, true);
@@ -1044,12 +1328,24 @@ namespace ChromeUpdaterWPF
             if (Directory.Exists(temp4)) Directory.Delete(temp4, true);
 
             RunProcess(szPath, $"x \"{installerPath}\" -o\"{temp1}\" -y");
+
             string updater7z = Path.Combine(temp1, "updater.7z");
-            if (File.Exists(updater7z)) RunProcess(szPath, $"x \"{updater7z}\" -o\"{temp2}\" -y"); else temp2 = temp1;
+            if (File.Exists(updater7z))
+                RunProcess(szPath, $"x \"{updater7z}\" -o\"{temp2}\" -y");
+            else
+                temp2 = temp1;
+
             string[] innerInstallers = Directory.GetFiles(temp2, "*_chrome_installer.exe", SearchOption.AllDirectories);
-            if (innerInstallers.Length > 0) RunProcess(szPath, $"x \"{innerInstallers[0]}\" -o\"{temp3}\" -y"); else temp3 = temp2;
+            if (innerInstallers.Length > 0)
+                RunProcess(szPath, $"x \"{innerInstallers[0]}\" -o\"{temp3}\" -y");
+            else
+                temp3 = temp2;
+
             string[] chrome7zs = Directory.GetFiles(temp3, "chrome.7z", SearchOption.AllDirectories);
-            if (chrome7zs.Length > 0) RunProcess(szPath, $"x \"{chrome7zs[0]}\" -o\"{temp4}\" -y"); else temp4 = temp3;
+            if (chrome7zs.Length > 0)
+                RunProcess(szPath, $"x \"{chrome7zs[0]}\" -o\"{temp4}\" -y");
+            else
+                temp4 = temp3;
 
             string[] chromeBinDirs = Directory.GetDirectories(temp4, "Chrome-bin", SearchOption.AllDirectories);
             if (chromeBinDirs.Length > 0)
@@ -1073,21 +1369,36 @@ namespace ChromeUpdaterWPF
         private void StartBlinking()
         {
             DoubleAnimation anim = new DoubleAnimation(1, 0.2, TimeSpan.FromMilliseconds(500)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever };
-            blinkStoryboard = new Storyboard(); blinkStoryboard.Children.Add(anim);
-            Storyboard.SetTarget(anim, lblOverlayStatus); Storyboard.SetTargetProperty(anim, new PropertyPath(TextBlock.OpacityProperty));
+            blinkStoryboard = new Storyboard();
+            blinkStoryboard.Children.Add(anim);
+            Storyboard.SetTarget(anim, lblOverlayStatus);
+            Storyboard.SetTargetProperty(anim, new PropertyPath(TextBlock.OpacityProperty));
             blinkStoryboard.Begin();
         }
-        private void StopBlinking() { blinkStoryboard?.Stop(); lblOverlayStatus.Opacity = 1; }
+
+        private void StopBlinking()
+        {
+            blinkStoryboard?.Stop();
+            lblOverlayStatus.Opacity = 1;
+        }
 
         public void ProgressBar_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ClickCount == 2)
             {
-                if (poemStoryboard != null) { poemStoryboard.Stop(); poemStoryboard = null; txtPoem.Text = ""; return; }
+                if (poemStoryboard != null)
+                {
+                    poemStoryboard.Stop();
+                    poemStoryboard = null;
+                    txtPoem.Text = "";
+                    return;
+                }
                 txtPoem.Text = poemText + poemText + poemText;
                 DoubleAnimation scrollAnim = new DoubleAnimation { From = 180, To = -350, Duration = TimeSpan.FromSeconds(15), RepeatBehavior = RepeatBehavior.Forever };
-                poemStoryboard = new Storyboard(); poemStoryboard.Children.Add(scrollAnim);
-                Storyboard.SetTarget(scrollAnim, txtPoem); Storyboard.SetTargetProperty(scrollAnim, new PropertyPath("(Canvas.Top)"));
+                poemStoryboard = new Storyboard();
+                poemStoryboard.Children.Add(scrollAnim);
+                Storyboard.SetTarget(scrollAnim, txtPoem);
+                Storyboard.SetTargetProperty(scrollAnim, new PropertyPath("(Canvas.Top)"));
                 poemStoryboard.Begin();
             }
         }
@@ -1102,8 +1413,23 @@ namespace ChromeUpdaterWPF
 
         private async Task Download7zWithFallback(string savePath)
         {
-            string[] urls = { "https://gitee.com/zhoupan/AI-OCR/raw/master/7zr.exe", "https://www.7-zip.org/a/7zr.exe", "https://cytranet-dal.dl.sourceforge.net/project/sevenzip/7-Zip/25.01/7zr.exe" };
-            foreach (string u in urls) { try { using (var c = CreateSafeWebClient()) { await c.DownloadFileTaskAsync(new Uri(u), savePath); return; } } catch { } }
+            string[] urls = {
+                "https://gitee.com/zhoupan/AI-OCR/raw/master/7zr.exe",
+                "https://www.7-zip.org/a/7zr.exe",
+                "https://cytranet-dal.dl.sourceforge.net/project/sevenzip/7-Zip/25.01/7zr.exe"
+            };
+            foreach (string u in urls)
+            {
+                try
+                {
+                    using (var c = CreateSafeWebClient())
+                    {
+                        await c.DownloadFileTaskAsync(new Uri(u), savePath);
+                        return;
+                    }
+                }
+                catch { }
+            }
             throw new Exception("7zr.exe 下载失败");
         }
 
@@ -1112,7 +1438,9 @@ namespace ChromeUpdaterWPF
             if (osType == "XP") return "49.0.2623.112";
             if (osType == "7/8") return "109.0.5414.120";
 
-            string ap = is64 ? (channelIndex == 0 ? "x64-stable-statsdef_1" : channelIndex == 1 ? "x64-beta-statsdef_1" : channelIndex == 2 ? "x64-dev-statsdef_1" : "x64-canary-statsdef_1") : (channelIndex == 0 ? "stable-arch_x86-statsdef_1" : channelIndex == 1 ? "beta-arch_x86-statsdef_1" : channelIndex == 2 ? "dev-arch_x86-statsdef_1" : "canary-arch_x86-statsdef_1");
+            string ap = is64 ?
+                (channelIndex == 0 ? "x64-stable-statsdef_1" : channelIndex == 1 ? "x64-beta-statsdef_1" : channelIndex == 2 ? "x64-dev-statsdef_1" : "x64-canary-statsdef_1") :
+                (channelIndex == 0 ? "stable-arch_x86-statsdef_1" : channelIndex == 1 ? "beta-arch_x86-statsdef_1" : channelIndex == 2 ? "dev-arch_x86-statsdef_1" : "canary-arch_x86-statsdef_1");
             string appID = channelIndex == 3 ? "{4ea16ac7-fd5a-47c3-875b-dbf8a2000d21}" : "{8A69D345-D564-463C-AFF1-A69D9E530F96}";
             string arch = is64 ? "x64" : "x86";
 
@@ -1130,8 +1458,16 @@ namespace ChromeUpdaterWPF
                 byte[] postBytes = System.Text.Encoding.UTF8.GetBytes(xmlData);
 
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create("https://update.googleapis.com/service/update2");
-                req.Method = "POST"; req.ContentType = "application/x-www-form-urlencoded"; req.ContentLength = postBytes.Length; req.Timeout = 8000;
-                using (Stream reqStream = req.GetRequestStream()) reqStream.Write(postBytes, 0, postBytes.Length);
+                req.Method = "POST";
+                req.ContentType = "application/x-www-form-urlencoded";
+                req.ContentLength = postBytes.Length;
+                req.Timeout = 8000;
+
+                using (Stream reqStream = req.GetRequestStream())
+                {
+                    reqStream.Write(postBytes, 0, postBytes.Length);
+                }
+
                 using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
                 using (StreamReader sr = new StreamReader(res.GetResponseStream()))
                 {
@@ -1147,9 +1483,13 @@ namespace ChromeUpdaterWPF
         {
             if (osType == "XP") return ("49.0.2623.112", "https://dl.google.com/release2/h8vnfiy7pvn3lxy9ehfsaxlrnnukgff8jnghr1/49.0.2623.112_chrome_installer.exe");
             if (osType == "7/8") return ("109.0.5414.120", is64 ? "https://dl.google.com/release2/chrome/czao2hrvpk5wgqrkz4kks5r734_109.0.5414.120/109.0.5414.120_chrome_installer.exe" : "https://dl.google.com/release2/chrome/acihtkcueyye3ymoj2afvv7ulzxa_109.0.5414.120/109.0.5414.120_chrome_installer.exe");
-            string ap = is64 ? (chIdx == 0 ? "x64-stable-statsdef_1" : chIdx == 1 ? "x64-beta-statsdef_1" : chIdx == 2 ? "x64-dev-statsdef_1" : "x64-canary-statsdef_1") : (chIdx == 0 ? "stable-arch_x86-statsdef_1" : chIdx == 1 ? "beta-arch_x86-statsdef_1" : chIdx == 2 ? "dev-arch_x86-statsdef_1" : "canary-arch_x86-statsdef_1");
+
+            string ap = is64 ?
+                (chIdx == 0 ? "x64-stable-statsdef_1" : chIdx == 1 ? "x64-beta-statsdef_1" : chIdx == 2 ? "x64-dev-statsdef_1" : "x64-canary-statsdef_1") :
+                (chIdx == 0 ? "stable-arch_x86-statsdef_1" : chIdx == 1 ? "beta-arch_x86-statsdef_1" : chIdx == 2 ? "dev-arch_x86-statsdef_1" : "canary-arch_x86-statsdef_1");
             string fName = chIdx == 3 ? (is64 ? "ChromeCanarySetup64.exe" : "ChromeCanarySetup.exe") : (is64 ? "ChromeStandaloneSetup64.exe" : "ChromeStandaloneSetup.exe");
             string appID = chIdx == 3 ? "%7B4ea16ac7-fd5a-47c3-875b-dbf8a2000d21%7D" : "%7B8A69D345-D564-463C-AFF1-A69D9E530F96%7D";
+
             return (version, $"https://dl.google.com/tag/s/appguid%3D{appID}%26iid%3D%7B00000000-0000-0000-0000-000000000000%7D%26lang%3Dzh-CN%26browser%3D4%26usagestats%3D0%26appname%3DGoogle%2520Chrome%26needsadmin%3Dprefers%26ap%3D{ap}%26installdataindex%3Dempty/update2/installers/{fName}");
         }
 
@@ -1159,15 +1499,25 @@ namespace ChromeUpdaterWPF
             {
                 using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion"))
                 {
-                    if (k != null && k.GetValue("CurrentMajorVersionNumber") != null && int.Parse(k.GetValue("CurrentMajorVersionNumber").ToString()) >= 10) return "10/11";
+                    if (k != null && k.GetValue("CurrentMajorVersionNumber") != null && int.Parse(k.GetValue("CurrentMajorVersionNumber").ToString()) >= 10)
+                        return "10/11";
                 }
             }
             catch { }
             return Environment.OSVersion.Version.Major <= 5 ? "XP" : "7/8";
         }
 
-        private int CompareVersions(string vA, string vB) { try { return new Version(vA).CompareTo(new Version(vB)); } catch { return string.Compare(vA, vB, StringComparison.OrdinalIgnoreCase); } }
+        private int CompareVersions(string vA, string vB)
+        {
+            try { return new Version(vA).CompareTo(new Version(vB)); }
+            catch { return string.Compare(vA, vB, StringComparison.OrdinalIgnoreCase); }
+        }
 
-        private void RunProcess(string exe, string args) { Process p = new Process { StartInfo = { FileName = exe, Arguments = args, CreateNoWindow = true, UseShellExecute = false } }; p.Start(); p.WaitForExit(); }
+        private void RunProcess(string exe, string args)
+        {
+            Process p = new Process { StartInfo = { FileName = exe, Arguments = args, CreateNoWindow = true, UseShellExecute = false } };
+            p.Start();
+            p.WaitForExit();
+        }
     }
 }

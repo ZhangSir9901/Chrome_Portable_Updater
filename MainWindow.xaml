@@ -14,7 +14,7 @@
 
         <Grid>
             <!-- 顶部拖拽标题栏 -->
-            <Grid Height="40" VerticalAlignment="Top" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid Height="40" VerticalAlignment="Top" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" Panel.ZIndex="10">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0,0,0">
                     <Image Source="/logo.ico" Height="28" Width="28" VerticalAlignment="Center" Margin="0,0,14,0"/>
                     <TextBlock Text="Chrome 便携版智能升级器" FontWeight="Bold" Foreground="#34495E" VerticalAlignment="Center"/>
@@ -26,8 +26,8 @@
                 </StackPanel>
             </Grid>
 
-            <!-- 核心参数区域 -->
-            <StackPanel Margin="30,50,30,20">
+            <!-- 🌟 主界面容器 (与设置界面互斥显示) -->
+            <StackPanel x:Name="MainContentPanel" Margin="30,50,30,20">
                 <Grid Margin="0,0,0,15">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -37,7 +37,7 @@
                     <!-- 左侧区域 -->
                     <StackPanel Grid.Column="0" Margin="0,0,15,0">
                         <TextBlock Text="系统架构" Foreground="#7F8C8D" Margin="5,0,0,5"/>
-                        <Border x:Name="borderOS" Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,10">
+                        <Border Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,10">
                             <StackPanel Orientation="Horizontal">
                                 <RadioButton x:Name="rdo64" Content="64位 (自动检测)" GroupName="OS" Margin="0,0,20,0" IsChecked="True"/>
                                 <RadioButton x:Name="rdo32" Content="32位" GroupName="OS"/>
@@ -52,7 +52,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 🌟 调整：默认选择“否” -->
                         <TextBlock Text="禁止写入无用缓存 (GPU/崩溃日志)" Foreground="#7F8C8D" Margin="5,12,0,5"/>
                         <Border x:Name="borderDisableCache" Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,10">
                             <StackPanel Orientation="Horizontal">
@@ -82,7 +81,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 🌟 调整：默认选择“不限”，输入框默认关 -->
                         <TextBlock Text="缓存上限控制与清理" Foreground="#7F8C8D" Margin="5,12,0,5"/>
                         <Border x:Name="borderCacheLimit" Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="10,6">
                             <Grid>
@@ -117,19 +115,19 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Button x:Name="btnLaunch" Grid.Column="0" Content="启动浏览器" Margin="0,0,5,0" Height="42" Background="#2ECC71" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnLaunch_Click"/>
-                    <Button x:Name="btnUpdate" Grid.Column="1" Content="检查并更新" Margin="5,0,5,0" Height="42" Background="#3498DB" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnUpdate_Click"/>
-                    <Button x:Name="btnAICheck" Grid.Column="2" Content="AI 模型体检" Margin="5,0,5,0" Height="42" Background="#95A5A6" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnAICheck_Click"/>
-                    <Button x:Name="btnExit"   Grid.Column="3" Content="退出程序" Margin="5,0,0,0" Height="42" Background="#E74C3C" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnClose_Click"/>
+                    <Button x:Name="btnLaunch" Grid.Column="0" Content="启动浏览器" Margin="0,0,4,0" Height="40" Background="#2ECC71" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnLaunch_Click"/>
+                    <Button x:Name="btnUpdate" Grid.Column="1" Content="检查更新" Margin="4,0,4,0" Height="40" Background="#3498DB" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnUpdate_Click"/>
+                    <Button x:Name="btnAICheck" Grid.Column="2" Content="AI 体检" Margin="4,0,4,0" Height="40" Background="#95A5A6" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnAICheck_Click"/>
+                    <Button x:Name="btnSettings" Grid.Column="3" Content="⚙️ 极客设置" Margin="4,0,4,0" Height="40" Background="#F39C12" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnSettings_Click"/>
+                    <Button x:Name="btnExit" Grid.Column="4" Content="退出程序" Margin="4,0,0,0" Height="40" Background="#E74C3C" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnClose_Click"/>
                 </Grid>
 
-                <!-- 底部两行排版：技术支持 + 动态版本自更新提示 -->
+                <!-- 底部排版 -->
                 <StackPanel Orientation="Vertical" HorizontalAlignment="Center" Margin="0,10,0,0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <TextBlock Text="技术支持: " Foreground="#95A5A6" VerticalAlignment="Center"/>
-
-                        <!-- 微信 -->
                         <Button Background="Transparent" BorderThickness="0" Padding="0" Margin="6,0,0,0" VerticalAlignment="Center" Cursor="Hand" Click="WeChat_Click" ToolTip="微信：jiujiujiayi666 (点击可直接复制)">
                             <Viewbox Width="16" Height="16">
                                 <Canvas Width="16" Height="16">
@@ -137,8 +135,6 @@
                                 </Canvas>
                             </Viewbox>
                         </Button>
-
-                        <!-- Telegram -->
                         <Button Background="Transparent" BorderThickness="0" Padding="0" Margin="10,0,0,0" VerticalAlignment="Center" Cursor="Hand" Click="Telegram_Click" ToolTip="Telegram：@YuC2027">
                             <Viewbox Width="16" Height="16">
                                 <Canvas Width="16" Height="16">
@@ -146,8 +142,6 @@
                                 </Canvas>
                             </Viewbox>
                         </Button>
-
-                        <!-- GitHub -->
                         <Button Background="Transparent" BorderThickness="0" Padding="0" Margin="10,0,0,0" VerticalAlignment="Center" Cursor="Hand" Click="Github_Click" ToolTip="访问 GitHub 开源项目">
                             <Viewbox Width="16" Height="16">
                                 <Canvas Width="16" Height="16">
@@ -157,10 +151,8 @@
                         </Button>
                     </StackPanel>
 
-                    <!-- 第二行：版本号 / 新版本动态升级按钮 -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0" Height="22">
-                        <TextBlock x:Name="lblAppVersion" Text="当前升级器版本: 读取中..." Foreground="#95A5A6" VerticalAlignment="Center" Cursor="Arrow"/>
-
+                        <TextBlock x:Name="lblAppVersion" Text="当前升级器版本: 读取中..." Foreground="#95A5A6" VerticalAlignment="Center"/>
                         <Button x:Name="btnAppUpdate" Content="🚀 发现新版本，点击立即自动升级！" Foreground="#E74C3C" FontWeight="Bold" Background="Transparent" BorderThickness="0" Cursor="Hand" VerticalAlignment="Center" Visibility="Collapsed" Click="BtnAppUpdate_Click">
                             <Button.Style>
                                 <Style TargetType="Button">
@@ -177,27 +169,89 @@
                             </Button.Style>
                         </Button>
                     </StackPanel>
-
                 </StackPanel>
             </StackPanel>
 
-            <!-- 半透明遮罩层 -->
-            <Grid x:Name="OverlayPanel" Visibility="Collapsed" Background="#F5F7F9FC">
+            <!-- 🌟 极客高级设置面板 (与主面板互斥显示) -->
+            <Grid x:Name="SettingsContentPanel" Margin="30,45,30,20" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="5,0,0,10" VerticalAlignment="Center">
+                    <TextBlock Text="⚙️ 极客高级设置" FontSize="18" FontWeight="Bold" Foreground="#2C3E50"/>
+                    <TextBlock Text="(此为高阶自定义，不设置依然会自动静默注入底层优化)" FontSize="12" Foreground="#7F8C8D" Margin="10,4,0,0"/>
+                </StackPanel>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,15">
+                    <StackPanel Margin="5,0,15,0">
+                        <!-- 性能与系统 -->
+                        <TextBlock Text="🚀 性能与系统资源控制" FontWeight="Bold" Foreground="#2980B9" Margin="0,5,0,5"/>
+                        <Border Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,12">
+                            <StackPanel>
+                                <CheckBox x:Name="chkHighEfficiency" Content="开启内存节省模式 (主动冻结后台未激活的标签页)"/>
+                                <CheckBox x:Name="chkBatterySaver" Content="开启节能模式 (降低后台刷新率，减少笔记本发热)" Margin="0,10,0,0"/>
+                                <CheckBox x:Name="chkDisableBgMode" Content="禁止后台驻留进程 (关闭浏览器后彻底释放内存，推荐)" Margin="0,10,0,0"/>
+                                <CheckBox x:Name="chkDisableSpellcheck" Content="禁用拼写检查 (极大降低打字时的 CPU 与磁盘 I/O 消耗)" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- AI 大模型与臃肿服务封杀 -->
+                        <TextBlock Text="🤖 AI 大模型与臃肿服务封杀" FontWeight="Bold" Foreground="#E67E22" Margin="0,15,0,5"/>
+                        <Border Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,12">
+                            <StackPanel>
+                                <CheckBox x:Name="chkDisableGenAI" Content="全域封杀生成式 AI (隐藏右上角、地址栏等各类臃肿 AI 按钮)"/>
+                                <CheckBox x:Name="chkDisableLocalModel" Content="锁死本地 AI 大模型下载通道 (防 4GB Gemini Nano 占盘)" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 遥测隐私与网络安全 -->
+                        <TextBlock Text="🛡️ 遥测、隐私与网络安全" FontWeight="Bold" Foreground="#27AE60" Margin="0,15,0,5"/>
+                        <Border Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,12">
+                            <StackPanel>
+                                <CheckBox x:Name="chkDisableCompUpdate" Content="禁止组件后台静默更新 (如宽藤解码器等，杜绝暗中发包)"/>
+                                <CheckBox x:Name="chkDisablePrediction" Content="彻底关闭网页预加载 (阻止疯狂预解析，大幅节省带宽与缓存写入)" Margin="0,10,0,0"/>
+                                <CheckBox x:Name="chkDisableHttpsOnly" Content="关闭强制 HTTPS 安全连接警告 (避免无证书的内网/老旧网站被拦截)" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- UI 纯净与臃肿功能剥离 -->
+                        <TextBlock Text="🧹 UI 纯净与臃肿功能剥离" FontWeight="Bold" Foreground="#8E44AD" Margin="0,15,0,5"/>
+                        <Border Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,12">
+                            <StackPanel>
+                                <CheckBox x:Name="chkDisablePromotions" Content="屏蔽推销标签页 (禁止升级后弹出烦人的欢迎或推销页面)"/>
+                                <CheckBox x:Name="chkDisableShopping" Content="禁用购物比价与商品追踪 (净化地址栏和侧边栏 UI)" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Content="💾 保存参数并刷新底层" Background="#2ECC71" Foreground="White" Height="42" Margin="0,0,5,0" Click="BtnSaveSettings_Click" BorderThickness="0" Cursor="Hand" FontSize="15" FontWeight="Bold"/>
+                    <Button Grid.Column="1" Content="返回主界面" Background="#95A5A6" Foreground="White" Height="42" Margin="5,0,0,0" Click="BtnCancelSettings_Click" BorderThickness="0" Cursor="Hand" FontSize="15"/>
+                </Grid>
+            </Grid>
+
+            <!-- 半透明遮罩层 (更新进度/彩蛋) -->
+            <Grid x:Name="OverlayPanel" Visibility="Collapsed" Background="#F5F7F9FC" Panel.ZIndex="5">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="120"/>
                     <RowDefinition Height="60"/>
                     <RowDefinition Height="180"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-
                 <StackPanel Grid.Row="0" VerticalAlignment="Bottom" HorizontalAlignment="Center" Width="550">
                     <TextBlock x:Name="lblOverlayStatus" Text="正在执行..." FontSize="18" FontWeight="Bold" Foreground="#2C3E50" HorizontalAlignment="Center" Margin="0,0,0,15"/>
                     <Border CornerRadius="8" ClipToBounds="True" Height="55" Background="#EAEDED">
                         <ProgressBar x:Name="progressBar" Minimum="0" Maximum="100" BorderThickness="0" Foreground="#2ECC71" Background="Transparent" PreviewMouseLeftButtonDown="ProgressBar_PreviewMouseDown"/>
                     </Border>
                 </StackPanel>
-
-                <!-- 彩蛋展示区 -->
                 <Border Grid.Row="2" Height="180" ClipToBounds="True" Background="Transparent" HorizontalAlignment="Center" Width="710">
                     <Canvas>
                         <TextBlock x:Name="txtPoem" TextAlignment="Center" Width="710" FontSize="22" FontWeight="Bold" Canvas.Top="180">
