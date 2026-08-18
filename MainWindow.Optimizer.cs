@@ -19,8 +19,9 @@ namespace ChromeUpdaterWPF
 
   ""Policies"": {
     ""_组1"": ""--- 性能榨取与系统资源控制 ---"",
+    ""HardwareAccelerationModeEnabled"": 1,
     ""BackgroundModeEnabled"": 0,
-    ""HighEfficiencyModeEnabled"": 1,
+    ""HighEfficiencyModeEnabled"": 0,
     ""BatterySaverModeState"": 1,
     ""SpellcheckEnabled"": 0,
 
@@ -90,6 +91,22 @@ namespace ChromeUpdaterWPF
             if (Regex.IsMatch(json, $@"""{key}""\s*:\s*""[^""]*""")) return Regex.Replace(json, $@"""{key}""\s*:\s*""[^""]*""", $@"""{key}"": ""{value}""");
             Match pMatch = Regex.Match(json, @"""Policies""\s*:\s*\{");
             return pMatch.Success ? json.Insert(pMatch.Index + pMatch.Length, $"\n    \"{key}\": \"{value}\",") : json;
+        }
+
+        // 🌟 专门读写 Flags 数组里面的属性开关 (@1开启 @2禁用)
+        private bool GetFlagValue(string json, string flagName, bool defaultVal)
+        {
+            Match m = Regex.Match(json, $@"""{flagName}@([12])""");
+            if (m.Success) return m.Groups[1].Value == "1";
+            return defaultVal;
+        }
+
+        private string SetFlagValue(string json, string flagName, bool isEnabled)
+        {
+            string newVal = isEnabled ? "1" : "2";
+            if (Regex.IsMatch(json, $@"""{flagName}@[12]"""))
+                return Regex.Replace(json, $@"""{flagName}@[12]""", $@"""{flagName}@{newVal}""");
+            return json;
         }
 
         private void ApplyEnterprisePolicies(string configJson)

@@ -184,7 +184,11 @@ namespace ChromeUpdaterWPF
             SettingsContentPanel.Visibility = Visibility.Visible;
 
             string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
-            chkHighEfficiency.IsChecked = GetPolicyValueInt(json, "HighEfficiencyModeEnabled", 1) == 1;
+
+            chkHardwareAccel.IsChecked = GetPolicyValueInt(json, "HardwareAccelerationModeEnabled", 1) == 1;
+            chkGpuRasterization.IsChecked = GetFlagValue(json, "enable-gpu-rasterization", true);
+            chkHighEfficiency.IsChecked = GetPolicyValueInt(json, "HighEfficiencyModeEnabled", 0) == 1;
+
             chkBatterySaver.IsChecked = GetPolicyValueInt(json, "BatterySaverModeState", 1) == 1;
             chkDisableBgMode.IsChecked = GetPolicyValueInt(json, "BackgroundModeEnabled", 0) == 0;
             chkDisableSpellcheck.IsChecked = GetPolicyValueInt(json, "SpellcheckEnabled", 0) == 0;
@@ -204,7 +208,10 @@ namespace ChromeUpdaterWPF
         {
             string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
 
+            json = SetPolicyValueInt(json, "HardwareAccelerationModeEnabled", chkHardwareAccel.IsChecked == true ? 1 : 0);
+            json = SetFlagValue(json, "enable-gpu-rasterization", chkGpuRasterization.IsChecked == true);
             json = SetPolicyValueInt(json, "HighEfficiencyModeEnabled", chkHighEfficiency.IsChecked == true ? 1 : 0);
+
             json = SetPolicyValueInt(json, "BatterySaverModeState", chkBatterySaver.IsChecked == true ? 1 : 0);
             json = SetPolicyValueInt(json, "BackgroundModeEnabled", chkDisableBgMode.IsChecked == true ? 0 : 1);
             json = SetPolicyValueInt(json, "SpellcheckEnabled", chkDisableSpellcheck.IsChecked == true ? 0 : 1);

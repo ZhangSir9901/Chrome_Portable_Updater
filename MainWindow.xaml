@@ -191,7 +191,9 @@
                         <TextBlock Text="🚀 性能与系统资源控制" FontWeight="Bold" Foreground="#2980B9" Margin="0,5,0,5"/>
                         <Border Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,12">
                             <StackPanel>
-                                <CheckBox x:Name="chkHighEfficiency" Content="开启内存节省模式 (主动冻结后台未激活的标签页)"/>
+                                <CheckBox x:Name="chkHardwareAccel" Content="开启硬件加速 (调用显卡渲染网页，关闭可解决部分老游戏黑屏/点击穿透)"/>
+                                <CheckBox x:Name="chkGpuRasterization" Content="开启 GPU 光栅化 (提升页面滑动流畅度，若老网页游戏拖拽失效请关闭)" Margin="0,10,0,0"/>
+                                <CheckBox x:Name="chkHighEfficiency" Content="开启内存节省模式 (主动冻结后台标签页，若网页游戏挂机掉线请关闭)" Margin="0,10,0,0"/>
                                 <CheckBox x:Name="chkBatterySaver" Content="开启节能模式 (降低后台刷新率，减少笔记本发热)" Margin="0,10,0,0"/>
                                 <CheckBox x:Name="chkDisableBgMode" Content="禁止后台驻留进程 (关闭浏览器后彻底释放内存，推荐)" Margin="0,10,0,0"/>
                                 <CheckBox x:Name="chkDisableSpellcheck" Content="禁用拼写检查 (极大降低打字时的 CPU 与磁盘 I/O 消耗)" Margin="0,10,0,0"/>
