@@ -9,6 +9,16 @@ namespace ChromeUpdaterWPF
 {
     public partial class MainWindow
     {
+        private string GetEdgeUserDataDir()
+        {
+            try
+            {
+                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                return Path.Combine(localAppData, "Microsoft", "Edge", "User Data");
+            }
+            catch { return string.Empty; }
+        }
+
         private void EnsureOptimizerConfig()
         {
             if (File.Exists(configFilePath)) return;
@@ -41,6 +51,15 @@ namespace ChromeUpdaterWPF
     ""PromotionalTabsEnabled"": 0,
     ""ShoppingListEnabled"": 0,
     ""ShowAppsShortcutInBookmarkBar"": 0
+  },
+
+  ""EdgePolicies"": {
+    ""_说明"": ""--- 微软 Edge 浏览器毒瘤组件封杀 ---"",
+    ""EdgeGamingEnabled"": 0,
+    ""EdgeShoppingAssistantEnabled"": 0,
+    ""HubsSidebarEnabled"": 0,
+    ""GenAILocalFoundationalModelSettings"": 1,
+    ""UserFeedbackAllowed"": 0
   },
 
   ""Flags"": [
@@ -93,7 +112,27 @@ namespace ChromeUpdaterWPF
             return pMatch.Success ? json.Insert(pMatch.Index + pMatch.Length, $"\n    \"{key}\": \"{value}\",") : json;
         }
 
-        // 🌟 专门读写 Flags 数组里面的属性开关 (@1开启 @2禁用)
+        private int GetEdgePolicyValueInt(string json, string key, int defaultVal)
+        {
+            Match m = Regex.Match(json, @"""EdgePolicies""\s*:\s*\{[^}]*""" + key + @"""\s*:\s*(\d+)");
+            return m.Success && int.TryParse(m.Groups[1].Value, out int val) ? val : defaultVal;
+        }
+
+        private string SetEdgePolicyValueInt(string json, string key, int value)
+        {
+            Match edgeBlock = Regex.Match(json, @"""EdgePolicies""\s*:\s*\{([^}]*)\}");
+            if (edgeBlock.Success)
+            {
+                string blockContent = edgeBlock.Groups[1].Value;
+                if (Regex.IsMatch(blockContent, $@"""{key}""\s*:\s*\d+"))
+                {
+                    string updatedBlock = Regex.Replace(blockContent, $@"""{key}""\s*:\s*\d+", $@"""{key}"": {value}");
+                    return json.Substring(0, edgeBlock.Groups[1].Index) + updatedBlock + json.Substring(edgeBlock.Groups[1].Index + blockContent.Length);
+                }
+            }
+            return json;
+        }
+
         private bool GetFlagValue(string json, string flagName, bool defaultVal)
         {
             Match m = Regex.Match(json, $@"""{flagName}@([12])""");
@@ -109,43 +148,140 @@ namespace ChromeUpdaterWPF
             return json;
         }
 
+        // ================== 🌟 高级设置面板读取与保存 (统一收口在此) ==================
+        private void BtnSettings_Click(object sender, RoutedEventArgs e)
+        {
+            MainContentPanel.Visibility = Visibility.Collapsed;
+            SettingsContentPanel.Visibility = Visibility.Visible;
+
+            string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+
+            chkHardwareAccel.IsChecked = GetPolicyValueInt(json, "HardwareAccelerationModeEnabled", 1) == 1;
+            chkGpuRasterization.IsChecked = GetFlagValue(json, "enable-gpu-rasterization", true);
+            chkHighEfficiency.IsChecked = GetPolicyValueInt(json, "HighEfficiencyModeEnabled", 0) == 1;
+
+            chkBatterySaver.IsChecked = GetPolicyValueInt(json, "BatterySaverModeState", 1) == 1;
+            chkDisableBgMode.IsChecked = GetPolicyValueInt(json, "BackgroundModeEnabled", 0) == 0;
+            chkDisableSpellcheck.IsChecked = GetPolicyValueInt(json, "SpellcheckEnabled", 0) == 0;
+
+            chkDisableGenAI.IsChecked = GetPolicyValueInt(json, "GenAiDefaultSettings", 1) == 1;
+            chkDisableLocalModel.IsChecked = GetPolicyValueInt(json, "GenAILocalFoundationalModelSettings", 1) == 1;
+
+            chkDisableCompUpdate.IsChecked = GetPolicyValueInt(json, "ComponentUpdatesEnabled", 0) == 0;
+            chkDisablePrediction.IsChecked = GetPolicyValueInt(json, "NetworkPredictionOptions", 2) == 2;
+            chkDisableHttpsOnly.IsChecked = GetPolicyValueString(json, "HttpsOnlyMode", "disallowed") == "disallowed";
+
+            chkDisablePromotions.IsChecked = GetPolicyValueInt(json, "PromotionalTabsEnabled", 0) == 0;
+            chkDisableShopping.IsChecked = GetPolicyValueInt(json, "ShoppingListEnabled", 0) == 0;
+
+            // 🌟 关联 Edge 设置回显
+            chkDisableEdgeBloat.IsChecked = GetEdgePolicyValueInt(json, "EdgeGamingEnabled", 0) == 0;
+            chkDisableEdgeAI.IsChecked = GetEdgePolicyValueInt(json, "GenAILocalFoundationalModelSettings", 1) == 1;
+        }
+
+        private void BtnSaveSettings_Click(object sender, RoutedEventArgs e)
+        {
+            string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+
+            json = SetPolicyValueInt(json, "HardwareAccelerationModeEnabled", chkHardwareAccel.IsChecked == true ? 1 : 0);
+            json = SetFlagValue(json, "enable-gpu-rasterization", chkGpuRasterization.IsChecked == true);
+            json = SetPolicyValueInt(json, "HighEfficiencyModeEnabled", chkHighEfficiency.IsChecked == true ? 1 : 0);
+
+            json = SetPolicyValueInt(json, "BatterySaverModeState", chkBatterySaver.IsChecked == true ? 1 : 0);
+            json = SetPolicyValueInt(json, "BackgroundModeEnabled", chkDisableBgMode.IsChecked == true ? 0 : 1);
+            json = SetPolicyValueInt(json, "SpellcheckEnabled", chkDisableSpellcheck.IsChecked == true ? 0 : 1);
+
+            json = SetPolicyValueInt(json, "GenAiDefaultSettings", chkDisableGenAI.IsChecked == true ? 1 : 0);
+            json = SetPolicyValueInt(json, "GenAILocalFoundationalModelSettings", chkDisableLocalModel.IsChecked == true ? 1 : 0);
+
+            json = SetPolicyValueInt(json, "ComponentUpdatesEnabled", chkDisableCompUpdate.IsChecked == true ? 0 : 1);
+            json = SetPolicyValueInt(json, "NetworkPredictionOptions", chkDisablePrediction.IsChecked == true ? 2 : 0);
+            json = SetPolicyValueString(json, "HttpsOnlyMode", chkDisableHttpsOnly.IsChecked == true ? "disallowed" : "default");
+
+            json = SetPolicyValueInt(json, "PromotionalTabsEnabled", chkDisablePromotions.IsChecked == true ? 0 : 1);
+            json = SetPolicyValueInt(json, "ShoppingListEnabled", chkDisableShopping.IsChecked == true ? 0 : 1);
+
+            // 🌟 写入 Edge 设置
+            int edgeBloatVal = chkDisableEdgeBloat.IsChecked == true ? 0 : 1;
+            int edgeAiVal = chkDisableEdgeAI.IsChecked == true ? 1 : 0;
+            json = SetEdgePolicyValueInt(json, "EdgeGamingEnabled", edgeBloatVal);
+            json = SetEdgePolicyValueInt(json, "EdgeShoppingAssistantEnabled", edgeBloatVal);
+            json = SetEdgePolicyValueInt(json, "HubsSidebarEnabled", edgeBloatVal);
+            json = SetEdgePolicyValueInt(json, "GenAILocalFoundationalModelSettings", edgeAiVal);
+
+            try
+            {
+                File.WriteAllText(configFilePath, json, System.Text.Encoding.UTF8);
+                ApplyChromeTuningConfig();
+                MessageBox.Show("极客优化参数已保存！\n已同时为 Chrome 与 Edge 注入系统底层组策略拦截规则。\n重启浏览器后即可完美生效。", "应用成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex) { MessageBox.Show($"保存配置文件失败: {ex.Message}"); }
+
+            SettingsContentPanel.Visibility = Visibility.Collapsed;
+            MainContentPanel.Visibility = Visibility.Visible;
+        }
+
+        private void BtnCancelSettings_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsContentPanel.Visibility = Visibility.Collapsed;
+            MainContentPanel.Visibility = Visibility.Visible;
+        }
+
+        // ================== 🌟 组策略注入与沙盒文件锁定 ==================
         private void ApplyEnterprisePolicies(string configJson)
         {
             try
             {
+                // 1. 注入 Chrome 组策略
                 using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Policies\Google\Chrome"))
                 {
-                    if (key == null) return;
-                    key.SetValue("UserDataDir", GetNormalizedPath(userDataDir), Microsoft.Win32.RegistryValueKind.String);
-                    key.SetValue("DefaultBrowserSettingEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
-
-                    Match policyBlock = Regex.Match(configJson, @"""Policies""\s*:\s*\{([^}]*)\}");
-                    if (policyBlock.Success)
+                    if (key != null)
                     {
-                        foreach (Match m in Regex.Matches(policyBlock.Groups[1].Value, @"""([A-Za-z0-9_]+)""\s*:\s*(\d+)"))
-                            if (!m.Groups[1].Value.StartsWith("_")) key.SetValue(m.Groups[1].Value, int.Parse(m.Groups[2].Value), Microsoft.Win32.RegistryValueKind.DWord);
+                        key.SetValue("UserDataDir", GetNormalizedPath(userDataDir), Microsoft.Win32.RegistryValueKind.String);
+                        key.SetValue("DefaultBrowserSettingEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
 
-                        foreach (Match m in Regex.Matches(policyBlock.Groups[1].Value, @"""([A-Za-z0-9_]+)""\s*:\s*""([^""]+)"""))
+                        Match policyBlock = Regex.Match(configJson, @"""Policies""\s*:\s*\{([^}]*)\}");
+                        if (policyBlock.Success)
                         {
-                            if (!m.Groups[1].Value.StartsWith("_"))
+                            foreach (Match m in Regex.Matches(policyBlock.Groups[1].Value, @"""([A-Za-z0-9_]+)""\s*:\s*(\d+)"))
+                                if (!m.Groups[1].Value.StartsWith("_")) key.SetValue(m.Groups[1].Value, int.Parse(m.Groups[2].Value), Microsoft.Win32.RegistryValueKind.DWord);
+
+                            foreach (Match m in Regex.Matches(policyBlock.Groups[1].Value, @"""([A-Za-z0-9_]+)""\s*:\s*""([^""]+)"""))
                             {
-                                if (m.Groups[2].Value == "default") try { key.DeleteValue(m.Groups[1].Value); } catch { }
-                                else key.SetValue(m.Groups[1].Value, m.Groups[2].Value, Microsoft.Win32.RegistryValueKind.String);
+                                if (!m.Groups[1].Value.StartsWith("_"))
+                                {
+                                    if (m.Groups[2].Value == "default") try { key.DeleteValue(m.Groups[1].Value); } catch { }
+                                    else key.SetValue(m.Groups[1].Value, m.Groups[2].Value, Microsoft.Win32.RegistryValueKind.String);
+                                }
                             }
                         }
+
+                        if (rdoDisableCacheYes.IsChecked == true) key.SetValue("MetricsReportingEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                        else try { key.DeleteValue("MetricsReportingEnabled"); } catch { }
+
+                        if (rdoLimitYes.IsChecked == true && double.TryParse(txtCacheLimit.Text, out double gb) && gb > 0)
+                        {
+                            long bytes = (long)(gb * 1024 * 1024 * 1024); if (bytes > int.MaxValue) bytes = int.MaxValue;
+                            key.SetValue("DiskCacheSize", (int)bytes, Microsoft.Win32.RegistryValueKind.DWord);
+                            long mediaBytes = bytes / 5; if (mediaBytes > 500 * 1024 * 1024) mediaBytes = 500 * 1024 * 1024;
+                            key.SetValue("MediaCacheSize", (int)mediaBytes, Microsoft.Win32.RegistryValueKind.DWord);
+                        }
+                        else { try { key.DeleteValue("DiskCacheSize"); } catch { } try { key.DeleteValue("MediaCacheSize"); } catch { } }
                     }
+                }
 
-                    if (rdoDisableCacheYes.IsChecked == true) key.SetValue("MetricsReportingEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
-                    else try { key.DeleteValue("MetricsReportingEnabled"); } catch { }
-
-                    if (rdoLimitYes.IsChecked == true && double.TryParse(txtCacheLimit.Text, out double gb) && gb > 0)
+                // 2. 🌟 联合注入 Edge 组策略 (斩除毒瘤游戏助手、Copilot与AI)
+                Match edgeBlock = Regex.Match(configJson, @"""EdgePolicies""\s*:\s*\{([^}]*)\}");
+                if (edgeBlock.Success)
+                {
+                    using (var edgeKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Policies\Microsoft\Edge"))
                     {
-                        long bytes = (long)(gb * 1024 * 1024 * 1024); if (bytes > int.MaxValue) bytes = int.MaxValue;
-                        key.SetValue("DiskCacheSize", (int)bytes, Microsoft.Win32.RegistryValueKind.DWord);
-                        long mediaBytes = bytes / 5; if (mediaBytes > 500 * 1024 * 1024) mediaBytes = 500 * 1024 * 1024;
-                        key.SetValue("MediaCacheSize", (int)mediaBytes, Microsoft.Win32.RegistryValueKind.DWord);
+                        if (edgeKey != null)
+                        {
+                            foreach (Match m in Regex.Matches(edgeBlock.Groups[1].Value, @"""([A-Za-z0-9_]+)""\s*:\s*(\d+)"))
+                                if (!m.Groups[1].Value.StartsWith("_")) edgeKey.SetValue(m.Groups[1].Value, int.Parse(m.Groups[2].Value), Microsoft.Win32.RegistryValueKind.DWord);
+                        }
                     }
-                    else { try { key.DeleteValue("DiskCacheSize"); } catch { } try { key.DeleteValue("MediaCacheSize"); } catch { } }
                 }
             }
             catch { }
@@ -159,6 +295,7 @@ namespace ChromeUpdaterWPF
 
             var targetUserDirs = new List<string> { userDataDir };
             try { string localPath = GetLocalUserDataDir(); if (!string.IsNullOrEmpty(localPath)) targetUserDirs.Add(localPath); } catch { }
+            try { string edgePath = GetEdgeUserDataDir(); if (!string.IsNullOrEmpty(edgePath)) targetUserDirs.Add(edgePath); } catch { }
 
             foreach (var uDir in targetUserDirs)
             {
@@ -260,6 +397,8 @@ namespace ChromeUpdaterWPF
         {
             var targetUserDirs = new List<string> { userDataDir };
             try { string localPath = GetLocalUserDataDir(); if (!string.IsNullOrEmpty(localPath)) targetUserDirs.Add(localPath); } catch { }
+            try { string edgePath = GetEdgeUserDataDir(); if (!string.IsNullOrEmpty(edgePath)) targetUserDirs.Add(edgePath); } catch { }
+
             long fBytes = 0; int cCount = 0;
             string[] relativeCachePaths = { @"Default\Cache", @"Default\Code Cache", @"Default\GPUCache", @"Default\Media Cache", @"GPUCache", @"ShaderCache", @"GrShaderCache", @"GraphiteDawnCache", @"Crashpad", @"BrowserMetrics" };
             foreach (var uDir in targetUserDirs)
@@ -304,6 +443,7 @@ namespace ChromeUpdaterWPF
             string portableAiPath = Path.Combine(userDataDir, "OptGuideOnDeviceModel");
             if (Directory.Exists(portableAiPath) && Directory.GetFiles(portableAiPath, "*", SearchOption.AllDirectories).Length > 0) foundPaths.Add(portableAiPath);
             try { string localAiPath = Path.Combine(GetLocalUserDataDir(), "OptGuideOnDeviceModel"); if (Directory.Exists(localAiPath) && Directory.GetFiles(localAiPath, "*", SearchOption.AllDirectories).Length > 0) foundPaths.Add(localAiPath); } catch { }
+            try { string edgeAiPath = Path.Combine(GetEdgeUserDataDir(), "OptGuideOnDeviceModel"); if (Directory.Exists(edgeAiPath) && Directory.GetFiles(edgeAiPath, "*", SearchOption.AllDirectories).Length > 0) foundPaths.Add(edgeAiPath); } catch { }
             return foundPaths.Count > 0;
         }
 
@@ -311,7 +451,10 @@ namespace ChromeUpdaterWPF
         {
             try
             {
-                if (!((Directory.Exists(portableDir) && File.Exists(chromeExe)) || Directory.Exists(GetLocalUserDataDir()))) { btnAICheck.Content = "AI 模型体检"; btnAICheck.IsEnabled = false; btnAICheck.Background = new SolidColorBrush(Color.FromRgb(149, 165, 166)); return; }
+                if (!((Directory.Exists(portableDir) && File.Exists(chromeExe)) || Directory.Exists(GetLocalUserDataDir()) || Directory.Exists(GetEdgeUserDataDir())))
+                {
+                    btnAICheck.Content = "AI 模型体检"; btnAICheck.IsEnabled = false; btnAICheck.Background = new SolidColorBrush(Color.FromRgb(149, 165, 166)); return;
+                }
                 if (IsAiModelPresent(out List<string> foundPaths)) { btnAICheck.Content = "存在AI模型"; btnAICheck.IsEnabled = true; btnAICheck.Background = new SolidColorBrush(Color.FromRgb(211, 84, 0)); }
                 else { btnAICheck.Content = "纯净无AI模型"; btnAICheck.IsEnabled = true; btnAICheck.Background = new SolidColorBrush(Color.FromRgb(155, 89, 182)); }
             }
@@ -321,17 +464,17 @@ namespace ChromeUpdaterWPF
         private void BtnAICheck_Click(object sender, RoutedEventArgs e)
         {
             if (!IsAiModelPresent(out List<string> foundPaths)) return;
-            if (MessageBox.Show("【AI 模型清理】\n\n检测到存在已静默下载的 AI 模型！\n是否立即物理清理，并通过企业策略彻底锁死未来下载通道？", "确认清理", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            if (MessageBox.Show("【全局 AI 模型清理】\n\n检测到便携版、系统 Chrome 或 Edge 中存在已静默下载的本地大模型(占用数GB空间)！\n\n是否立即物理粉碎，并通过企业策略彻底锁死未来下载通道？", "确认清理", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 ApplyChromeTuningConfig();
                 int deletedCount = 0; long freedBytes = 0;
                 foreach (var path in foundPaths)
                 {
                     try { if (Directory.Exists(path)) { foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories)) { try { freedBytes += new FileInfo(file).Length; } catch { } } Directory.Delete(path, true); deletedCount++; if (!File.Exists(path)) { File.WriteAllText(path, "LOCKED"); File.SetAttributes(path, FileAttributes.ReadOnly | FileAttributes.Hidden); } } }
-                    catch (Exception ex) { MessageBox.Show($"清理失败: {ex.Message}\n请先关闭浏览器！", "错误", MessageBoxButton.OK, MessageBoxImage.Error); UpdateAiButtonStatus(); return; }
+                    catch (Exception ex) { MessageBox.Show($"清理失败: {ex.Message}\n请先关闭全部 Chrome 与 Edge 浏览器窗口！", "错误", MessageBoxButton.OK, MessageBoxImage.Error); UpdateAiButtonStatus(); return; }
                 }
                 double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2); string freedText = freedMb > 1024 ? $"{Math.Round(freedMb / 1024, 2)} GB" : $"{freedMb} MB";
-                MessageBox.Show($"【清理完成】\n\n清除 {deletedCount} 个 AI 模型目录！\n共释放空间: {freedText}\n\n已为您锁死 AI 静默下载！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show($"【清理完成】\n\n清除 {deletedCount} 个 AI 模型目录！\n共释放空间: {freedText}\n\n已为您锁死 Chrome 与 Edge 的 AI 静默下载！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
                 UpdateAiButtonStatus();
             }
         }

@@ -227,6 +227,15 @@
                                 <CheckBox x:Name="chkDisableShopping" Content="禁用购物比价与商品追踪 (净化地址栏和侧边栏 UI)" Margin="0,10,0,0"/>
                             </StackPanel>
                         </Border>
+
+                        <!-- 🌟 微软 Edge 浏览器联合净化 (新增) -->
+                        <TextBlock Text="🌐 Microsoft Edge 浏览器联合净化" FontWeight="Bold" Foreground="#9B59B6" Margin="0,15,0,5"/>
+                        <Border Background="White" BorderBrush="#D6DBDF" BorderThickness="1" CornerRadius="4" Padding="15,12">
+                            <StackPanel>
+                                <CheckBox x:Name="chkDisableEdgeBloat" Content="封杀 Edge 游戏助手、Copilot 侧边栏与购物助手 (注入组策略)"/>
+                                <CheckBox x:Name="chkDisableEdgeAI" Content="锁死 Edge 本地 AI 大模型下载通道并纳入体检粉碎" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
