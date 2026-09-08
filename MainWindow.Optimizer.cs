@@ -62,6 +62,13 @@ namespace ChromeUpdaterWPF
     ""UserFeedbackAllowed"": 0
   },
 
+  ""WindowsTuning"": {
+    ""_说明"": ""--- Windows 系统级降噪与深度净化 ---"",
+    ""DisableStartMenuAds"": 1,
+    ""DisableTelemetry"": 1,
+    ""CleanSystemTempAndDumps"": 1
+  },
+
   ""Flags"": [
     ""optimization-guide-on-device-model@2"",
     ""prompt-api-for-gemini-nano@2"",
@@ -133,6 +140,28 @@ namespace ChromeUpdaterWPF
             return json;
         }
 
+        // 🌟 新增：Windows 系统净化节点的读取与保存逻辑
+        private int GetWinTuningValueInt(string json, string key, int defaultVal)
+        {
+            Match m = Regex.Match(json, @"""WindowsTuning""\s*:\s*\{[^}]*""" + key + @"""\s*:\s*(\d+)");
+            return m.Success && int.TryParse(m.Groups[1].Value, out int val) ? val : defaultVal;
+        }
+
+        private string SetWinTuningValueInt(string json, string key, int value)
+        {
+            Match winBlock = Regex.Match(json, @"""WindowsTuning""\s*:\s*\{([^}]*)\}");
+            if (winBlock.Success)
+            {
+                string blockContent = winBlock.Groups[1].Value;
+                if (Regex.IsMatch(blockContent, $@"""{key}""\s*:\s*\d+"))
+                {
+                    string updatedBlock = Regex.Replace(blockContent, $@"""{key}""\s*:\s*\d+", $@"""{key}"": {value}");
+                    return json.Substring(0, winBlock.Groups[1].Index) + updatedBlock + json.Substring(winBlock.Groups[1].Index + blockContent.Length);
+                }
+            }
+            return json;
+        }
+
         private bool GetFlagValue(string json, string flagName, bool defaultVal)
         {
             Match m = Regex.Match(json, $@"""{flagName}@([12])""");
@@ -174,9 +203,13 @@ namespace ChromeUpdaterWPF
             chkDisablePromotions.IsChecked = GetPolicyValueInt(json, "PromotionalTabsEnabled", 0) == 0;
             chkDisableShopping.IsChecked = GetPolicyValueInt(json, "ShoppingListEnabled", 0) == 0;
 
-            // 🌟 关联 Edge 设置回显
             chkDisableEdgeBloat.IsChecked = GetEdgePolicyValueInt(json, "EdgeGamingEnabled", 0) == 0;
             chkDisableEdgeAI.IsChecked = GetEdgePolicyValueInt(json, "GenAILocalFoundationalModelSettings", 1) == 1;
+
+            // 🌟 Windows 系统降噪设置回显
+            chkWinDisableAds.IsChecked = GetWinTuningValueInt(json, "DisableStartMenuAds", 1) == 1;
+            chkWinDisableTelemetry.IsChecked = GetWinTuningValueInt(json, "DisableTelemetry", 1) == 1;
+            chkWinCleanTemp.IsChecked = GetWinTuningValueInt(json, "CleanSystemTempAndDumps", 1) == 1;
         }
 
         private void BtnSaveSettings_Click(object sender, RoutedEventArgs e)
@@ -201,7 +234,6 @@ namespace ChromeUpdaterWPF
             json = SetPolicyValueInt(json, "PromotionalTabsEnabled", chkDisablePromotions.IsChecked == true ? 0 : 1);
             json = SetPolicyValueInt(json, "ShoppingListEnabled", chkDisableShopping.IsChecked == true ? 0 : 1);
 
-            // 🌟 写入 Edge 设置
             int edgeBloatVal = chkDisableEdgeBloat.IsChecked == true ? 0 : 1;
             int edgeAiVal = chkDisableEdgeAI.IsChecked == true ? 1 : 0;
             json = SetEdgePolicyValueInt(json, "EdgeGamingEnabled", edgeBloatVal);
@@ -209,11 +241,16 @@ namespace ChromeUpdaterWPF
             json = SetEdgePolicyValueInt(json, "HubsSidebarEnabled", edgeBloatVal);
             json = SetEdgePolicyValueInt(json, "GenAILocalFoundationalModelSettings", edgeAiVal);
 
+            // 🌟 写入 Windows 系统降噪设置
+            json = SetWinTuningValueInt(json, "DisableStartMenuAds", chkWinDisableAds.IsChecked == true ? 1 : 0);
+            json = SetWinTuningValueInt(json, "DisableTelemetry", chkWinDisableTelemetry.IsChecked == true ? 1 : 0);
+            json = SetWinTuningValueInt(json, "CleanSystemTempAndDumps", chkWinCleanTemp.IsChecked == true ? 1 : 0);
+
             try
             {
                 File.WriteAllText(configFilePath, json, System.Text.Encoding.UTF8);
                 ApplyChromeTuningConfig();
-                MessageBox.Show("极客优化参数已保存！\n已同时为 Chrome 与 Edge 注入系统底层组策略拦截规则。\n重启浏览器后即可完美生效。", "应用成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("极客优化参数已保存！\n已同时为 Chrome、Edge 及 Windows 系统注入底层组策略拦截规则。\n部分系统级降噪功能需重启电脑后生效。", "应用成功", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex) { MessageBox.Show($"保存配置文件失败: {ex.Message}"); }
 
@@ -270,7 +307,7 @@ namespace ChromeUpdaterWPF
                     }
                 }
 
-                // 2. 🌟 联合注入 Edge 组策略 (斩除毒瘤游戏助手、Copilot与AI)
+                // 2. 联合注入 Edge 组策略
                 Match edgeBlock = Regex.Match(configJson, @"""EdgePolicies""\s*:\s*\{([^}]*)\}");
                 if (edgeBlock.Success)
                 {
@@ -281,6 +318,59 @@ namespace ChromeUpdaterWPF
                             foreach (Match m in Regex.Matches(edgeBlock.Groups[1].Value, @"""([A-Za-z0-9_]+)""\s*:\s*(\d+)"))
                                 if (!m.Groups[1].Value.StartsWith("_")) edgeKey.SetValue(m.Groups[1].Value, int.Parse(m.Groups[2].Value), Microsoft.Win32.RegistryValueKind.DWord);
                         }
+                    }
+                }
+
+                // 3. 🌟 Windows 系统级去广告与去遥测注入
+                Match winBlock = Regex.Match(configJson, @"""WindowsTuning""\s*:\s*\{([^}]*)\}");
+                if (winBlock.Success)
+                {
+                    int disableAds = GetWinTuningValueInt(configJson, "DisableStartMenuAds", 1);
+                    int disableTelemetry = GetWinTuningValueInt(configJson, "DisableTelemetry", 1);
+
+                    if (disableAds == 1)
+                    {
+                        try
+                        {
+                            using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"))
+                            {
+                                if (key != null)
+                                {
+                                    key.SetValue("SystemPaneSuggestionsEnabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                                    key.SetValue("SubscribedContent-338388Enabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                                    key.SetValue("SubscribedContent-338389Enabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                                    key.SetValue("SubscribedContent-338393Enabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                                    key.SetValue("SubscribedContent-353698Enabled", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                                }
+                            }
+                            using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"))
+                            {
+                                if (key != null) key.SetValue("ShowSyncProviderNotifications", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (disableTelemetry == 1)
+                    {
+                        try
+                        {
+                            // 尝试 HKLM 级别遥测阻断 (管理员权限时生效)
+                            using (var key = Microsoft.Win32.Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\Microsoft\Windows\DataCollection"))
+                            {
+                                if (key != null) key.SetValue("AllowTelemetry", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                            }
+                        }
+                        catch { }
+                        try
+                        {
+                            // 兜底 HKCU 级别遥测阻断 (普通权限即可生效)
+                            using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"SOFTWARE\Policies\Microsoft\Windows\DataCollection"))
+                            {
+                                if (key != null) key.SetValue("AllowTelemetry", 0, Microsoft.Win32.RegistryValueKind.DWord);
+                            }
+                        }
+                        catch { }
                     }
                 }
             }
@@ -401,6 +491,8 @@ namespace ChromeUpdaterWPF
 
             long fBytes = 0; int cCount = 0;
             string[] relativeCachePaths = { @"Default\Cache", @"Default\Code Cache", @"Default\GPUCache", @"Default\Media Cache", @"GPUCache", @"ShaderCache", @"GrShaderCache", @"GraphiteDawnCache", @"Crashpad", @"BrowserMetrics" };
+
+            // 1. 清理浏览器的缓存
             foreach (var uDir in targetUserDirs)
             {
                 foreach (var relPath in relativeCachePaths)
@@ -408,6 +500,42 @@ namespace ChromeUpdaterWPF
                     try { string fullPath = Path.Combine(uDir, relPath); if (Directory.Exists(fullPath)) { foreach (var f in Directory.GetFiles(fullPath, "*", SearchOption.AllDirectories)) { try { fBytes += new FileInfo(f).Length; } catch { } } Directory.Delete(fullPath, true); cCount++; } } catch { }
                 }
             }
+
+            // 2. 🌟 Windows 系统深度清理 (临时文件与错误报告日志)
+            string configJson = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+            if (GetWinTuningValueInt(configJson, "CleanSystemTempAndDumps", 1) == 1)
+            {
+                var sysDirs = new List<string>();
+                try { sysDirs.Add(Path.GetTempPath()); } catch { }
+                try
+                {
+                    string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                    sysDirs.Add(Path.Combine(localAppData, "CrashDumps"));
+                    sysDirs.Add(Path.Combine(localAppData, "Microsoft", "Windows", "WER", "ReportArchive"));
+                    sysDirs.Add(Path.Combine(localAppData, "Microsoft", "Windows", "WER", "ReportQueue"));
+                }
+                catch { }
+
+                foreach (var dir in sysDirs)
+                {
+                    try
+                    {
+                        if (Directory.Exists(dir))
+                        {
+                            foreach (var f in Directory.GetFiles(dir, "*", SearchOption.TopDirectoryOnly))
+                            {
+                                try { fBytes += new FileInfo(f).Length; File.Delete(f); cCount++; } catch { }
+                            }
+                            foreach (var d in Directory.GetDirectories(dir))
+                            {
+                                try { Directory.Delete(d, true); cCount++; } catch { }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+
             return (fBytes, cCount);
         }
 
@@ -427,14 +555,6 @@ namespace ChromeUpdaterWPF
                 if (File.Exists(Path.Combine(userDataDir, "GPUCache"))) rdoDisableCacheYes.IsChecked = true;
             }
             catch { }
-        }
-
-        public void BtnCleanCache_Click(object sender, RoutedEventArgs e)
-        {
-            var (freedBytes, cleanedCount) = PerformSilentCacheClean();
-            ApplyChromeTuningConfig();
-            double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2); string freedText = freedMb > 1024 ? $"{Math.Round(freedMb / 1024, 2)} GB" : $"{freedMb} MB";
-            MessageBox.Show($"【缓存清理完成】\n\n成功清空了 {cleanedCount} 个无用缓存目录！\n共为您释放磁盘空间: {freedText}\n\n已保留您的全部密码、Cookies、网页历史与书签！", "清理成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private bool IsAiModelPresent(out List<string> foundPaths)
@@ -459,24 +579,6 @@ namespace ChromeUpdaterWPF
                 else { btnAICheck.Content = "纯净无AI模型"; btnAICheck.IsEnabled = true; btnAICheck.Background = new SolidColorBrush(Color.FromRgb(155, 89, 182)); }
             }
             catch { }
-        }
-
-        private void BtnAICheck_Click(object sender, RoutedEventArgs e)
-        {
-            if (!IsAiModelPresent(out List<string> foundPaths)) return;
-            if (MessageBox.Show("【全局 AI 模型清理】\n\n检测到便携版、系统 Chrome 或 Edge 中存在已静默下载的本地大模型(占用数GB空间)！\n\n是否立即物理粉碎，并通过企业策略彻底锁死未来下载通道？", "确认清理", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
-            {
-                ApplyChromeTuningConfig();
-                int deletedCount = 0; long freedBytes = 0;
-                foreach (var path in foundPaths)
-                {
-                    try { if (Directory.Exists(path)) { foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories)) { try { freedBytes += new FileInfo(file).Length; } catch { } } Directory.Delete(path, true); deletedCount++; if (!File.Exists(path)) { File.WriteAllText(path, "LOCKED"); File.SetAttributes(path, FileAttributes.ReadOnly | FileAttributes.Hidden); } } }
-                    catch (Exception ex) { MessageBox.Show($"清理失败: {ex.Message}\n请先关闭全部 Chrome 与 Edge 浏览器窗口！", "错误", MessageBoxButton.OK, MessageBoxImage.Error); UpdateAiButtonStatus(); return; }
-                }
-                double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2); string freedText = freedMb > 1024 ? $"{Math.Round(freedMb / 1024, 2)} GB" : $"{freedMb} MB";
-                MessageBox.Show($"【清理完成】\n\n清除 {deletedCount} 个 AI 模型目录！\n共释放空间: {freedText}\n\n已为您锁死 Chrome 与 Edge 的 AI 静默下载！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
-                UpdateAiButtonStatus();
-            }
         }
     }
 }

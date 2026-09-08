@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
@@ -93,7 +92,7 @@ namespace ChromeUpdaterWPF
             catch { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "User Data"); }
         }
 
-        // ================== 🌟 UI 窗口与按钮事件 ==================
+        // ================== 🌟 UI 窗口与基础交互事件 ==================
         public void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) { this.DragMove(); }
         public void BtnMinimize_Click(object sender, RoutedEventArgs e) { this.WindowState = WindowState.Minimized; }
         public void BtnClose_Click(object sender, RoutedEventArgs e) { Application.Current.Shutdown(); }
@@ -175,6 +174,34 @@ namespace ChromeUpdaterWPF
                 catch (Exception ex) { MessageBox.Show($"启动发生错误: {ex.Message}", "启动失败", MessageBoxButton.OK, MessageBoxImage.Error); }
             }
             else MessageBox.Show("请先检查并更新！");
+        }
+
+        // ================== 🌟 被误删的清理与体检按钮补回 ==================
+        public void BtnCleanCache_Click(object sender, RoutedEventArgs e)
+        {
+            var (freedBytes, cleanedCount) = PerformSilentCacheClean();
+            ApplyChromeTuningConfig();
+            double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2);
+            string freedText = freedMb > 1024 ? $"{Math.Round(freedMb / 1024, 2)} GB" : $"{freedMb} MB";
+            MessageBox.Show($"【缓存清理完成】\n\n成功清空了 {cleanedCount} 个无用缓存目录！\n共为您释放磁盘空间: {freedText}\n\n已保留您的全部密码、Cookies、网页历史与书签！", "清理成功", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        public void BtnAICheck_Click(object sender, RoutedEventArgs e)
+        {
+            if (!IsAiModelPresent(out List<string> foundPaths)) return;
+            if (MessageBox.Show("【全局 AI 模型清理】\n\n检测到便携版、系统 Chrome 或 Edge 中存在已静默下载的本地大模型(占用数GB空间)！\n\n是否立即物理粉碎，并通过企业策略彻底锁死未来下载通道？", "确认清理", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            {
+                ApplyChromeTuningConfig();
+                int deletedCount = 0; long freedBytes = 0;
+                foreach (var path in foundPaths)
+                {
+                    try { if (Directory.Exists(path)) { foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories)) { try { freedBytes += new FileInfo(file).Length; } catch { } } Directory.Delete(path, true); deletedCount++; if (!File.Exists(path)) { File.WriteAllText(path, "LOCKED"); File.SetAttributes(path, FileAttributes.ReadOnly | FileAttributes.Hidden); } } }
+                    catch (Exception ex) { MessageBox.Show($"清理失败: {ex.Message}\n请先关闭全部 Chrome 与 Edge 浏览器窗口！", "错误", MessageBoxButton.OK, MessageBoxImage.Error); UpdateAiButtonStatus(); return; }
+                }
+                double freedMb = Math.Round((double)freedBytes / (1024 * 1024), 2); string freedText = freedMb > 1024 ? $"{Math.Round(freedMb / 1024, 2)} GB" : $"{freedMb} MB";
+                MessageBox.Show($"【清理完成】\n\n清除 {deletedCount} 个 AI 模型目录！\n共释放空间: {freedText}\n\n已为您锁死 Chrome 与 Edge 的 AI 静默下载！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                UpdateAiButtonStatus();
+            }
         }
 
         // ================== 🌟 UI 交互动画 ==================
